@@ -21,7 +21,7 @@ class TiePointRead(BaseModel):
     northing: Optional[float] = None
     easting: Optional[float] = None
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, extra='ignore')
 
 
 class TiePointImport(BaseModel):

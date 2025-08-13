@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     # CORS
     cors_origins: List[str] = ["*"]
 
+
+
     # --- DB settings ---
     db_user: str = os.getenv("DB_USER", "postgres")
     db_password: str = os.getenv("DB_PASSWORD", "")

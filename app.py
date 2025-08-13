@@ -20,12 +20,30 @@ from settings import settings, configure_cors
 from fastapi import Depends, Query
 from sqlalchemy.orm import Session
 from pyproj import Transformer
+from fastapi.middleware.cors import CORSMiddleware
 
 from utils import _unknown, _unknown_upper
 
 
 # Initialize FastAPI with metadata
 app = FastAPI(title=settings.app_name)
+
+origins = [
+    "capacitor://localhost",
+    "http://localhost",
+    "http://127.0.0.1",
+    "http://192.168.1.20",  # if you ever load the UI from a dev server
+    "http://192.168.1.5",  # if you ever load the UI from a dev server
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,         # dev: you can use ["*"] if you prefer
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],           # or ["Authorization", "Content-Type"]
+)
+
 geod = Geodesic.WGS84  # uses the WGS84 ellipsoid
 configure_cors(app)
 
@@ -159,7 +177,7 @@ def parse_land_title(desc: str):
     # normalize & strip trailing punctuation
     desc = desc.strip().rstrip(':.')
     # anchor at the tie-line start
-    m_anchor = re.search(r'beginning\s+at\s+a', desc, flags=re.IGNORECASE)
+    m_anchor = re.search(r'beg.\s+at\s+a', desc, flags=re.IGNORECASE)
     if not m_anchor:
         raise ValueError("Could not find the 'Beginning at a pt. marked...' anchor")
     desc = desc[m_anchor.start():]
@@ -440,3 +458,15 @@ def convert_prs92_zone3(req: NERequest):
     transformer = Transformer.from_crs("EPSG:3123", "EPSG:4326", always_xy=True)
     lon, lat = transformer.transform(req.easting, req.northing)
     return LonLatResponse(lon=lon, lat=lat)
+
+
+
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from starlette.status import HTTP_422_UNPROCESSABLE_ENTITY
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request, exc: RequestValidationError):
+    print("VALIDATION ERR:", exc.errors())
+    return JSONResponse(status_code=HTTP_422_UNPROCESSABLE_ENTITY,
+                        content={"detail": exc.errors()})
