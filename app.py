@@ -132,7 +132,7 @@ class ParseResponse(BaseModel):
 # ——— Regex to handle both "°" and "deg.", minutes with or without apostrophe, optional seconds, optional EW ———
 _BEARING_RX = re.compile(
     r'(?P<ns>[NS])\.?\s*'                   # N or S
-    r'(?P<deg>\d+)(?:°|\s*deg\.?)\s*'       # degrees
+    r'(?P<deg>\d+)(?:°|\s*deg\.?|-)\s*'       # degrees
     r'(?P<min>\d+)\'?\s*'                   # minutes (apostrophe optional)
     r'(?:\s*(?P<sec>\d+(?:\.\d+)?))?\"?\s*'  # optional seconds + quote
     r'(?P<ew>[EW])?\.?',                    # optional E or W
@@ -174,10 +174,20 @@ def _parse_segment(seg: str):
 
 
 def parse_land_title(desc: str):
+    # List of anchor phrases (just add more as needed)
+    anchor_phrases = [
+        r'beginning\s+at\s+a',
+        r'beg.\s+at\s+a',
+    ]
+
     # normalize & strip trailing punctuation
     desc = desc.strip().rstrip(':.')
+
+    # Join them into a single regex with OR (|)
+    pattern = r'(?:' + '|'.join(anchor_phrases) + r')'
+
     # anchor at the tie-line start
-    m_anchor = re.search(r'beg.\s+at\s+a', desc, flags=re.IGNORECASE)
+    m_anchor = re.search(pattern, desc, flags=re.IGNORECASE)
     if not m_anchor:
         raise ValueError("Could not find the 'Beginning at a pt. marked...' anchor")
     desc = desc[m_anchor.start():]
