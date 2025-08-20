@@ -2,18 +2,14 @@ import os
 import re
 import json
 from pydantic import ValidationError
-from sqlalchemy import and_
 
 from fastapi import FastAPI, File, UploadFile, HTTPException
-from pydantic import BaseModel
 from geographiclib.geodesic import Geodesic
 from google.cloud import vision
 from google.oauth2 import service_account
 
-from typing import List, Optional
-
 from db import Base, engine, get_db
-from models.tie_point import TiePoint
+from app.models.tie_point import TiePoint
 from schemas import *
 
 from settings import settings, configure_cors
@@ -21,9 +17,6 @@ from fastapi import Depends, Query
 from sqlalchemy.orm import Session
 from pyproj import Transformer
 from fastapi.middleware.cors import CORSMiddleware
-
-from utils import _unknown, _unknown_upper
-
 
 # Initialize FastAPI with metadata
 app = FastAPI(title=settings.app_name)
