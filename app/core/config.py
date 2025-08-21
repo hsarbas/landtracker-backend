@@ -3,27 +3,52 @@ from urllib.parse import quote_plus
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic_settings import BaseSettings, SettingsConfigDict
+import os
+
+SECRET_KEY = os.environ.get("SECRET_KEY", "dev-super-secret-change-me")
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.environ.get("ACCESS_EXPIRE_MIN", 30))
+REFRESH_TOKEN_EXPIRE_DAYS = int(os.environ.get("REFRESH_EXPIRE_DAYS", 7))
+
+# DB is already configured in your project via app/db/session.py -> just keep using it.
+ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "admin@admin.com")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "AdminPass123!")
+ADMIN_MOBILE = os.environ.get("ADMIN_MOBILE", "+639123456789")
+
+REFRESH_COOKIE_NAME = os.environ.get("REFRESH_COOKIE_NAME", "rt")
+REFRESH_COOKIE_PATH = os.environ.get("REFRESH_COOKIE_PATH", "/api/v1/auth/refresh")
+REFRESH_COOKIE_SAMESITE = os.environ.get("REFRESH_COOKIE_SAMESITE", "none")  # "lax" or "none"
+REFRESH_COOKIE_SECURE = os.environ.get("REFRESH_COOKIE_SECURE", "false").lower() == "true"
+REFRESH_COOKIE_HTTPONLY = True  # always True for security
+CORS_ALLOW_ORIGINS = os.environ.get("CORS_ALLOW_ORIGINS", "*").split(",")  # set your FE origin(s) in prod
+
+OTP_LENGTH = int(os.getenv("OTP_LENGTH", 6))
+OTP_TTL_MINUTES = int(os.getenv("OTP_TTL_MINUTES", 5))
+OTP_MAX_ATTEMPTS = int(os.getenv("OTP_MAX_ATTEMPTS", 5))
+OTP_RESEND_COOLDOWN_SECONDS = int(os.getenv("OTP_RESEND_COOLDOWN_SECONDS", 60))
+
+ALLOWED_ORIGINS = [
+    "http://localhost:9000",
+    "http://127.0.0.1:9000",
+    "http://192.168.1.9:9000",
+    "http://192.168.1.7:9500",
+    "capacitor://localhost",
+    # "https://your-production-domain.com",   # add when you deploy
+]
 
 
 class Settings(BaseSettings):
     # --- App ---
     app_name: str = "LandTracker"
     creds_path: str = "keys/vision-ocr.json"
-    cors_origins: List[str] = [
-        "capacitor://localhost",
-        "http://localhost:9000",
-        "http://127.0.0.1",
-        "http://192.168.1.20",
-        "http://192.168.1.5",
-    ]
 
     # --- DB settings ---
     # Prefer a single DATABASE_URL, but also support individual parts
     database_url: Optional[str] = None          # e.g. postgresql+psycopg2://user:pass@host:5432/db
-    db_user: str = "postgres"
-    db_password: str = ""                        # will be URL-escaped
+    db_user: str = "landtracker"
+    db_password: str = "landtrackerpw1234"                        # will be URL-escaped
     db_host: str = "127.0.0.1"
-    db_port: int = 5432
+    db_port: int = 5433
     db_name: str = "landtracker_db"
 
     model_config = SettingsConfigDict(
@@ -43,13 +68,15 @@ class Settings(BaseSettings):
             f"{self.db_host}:{self.db_port}/{self.db_name}"
         )
 
+
 settings = Settings()
 
-def configure_cors(app: FastAPI) -> None:
+
+def configure_cors(app):
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.cors_origins,
-        allow_credentials=True,
+        allow_origins=ALLOWED_ORIGINS,
+        allow_credentials=True,   # required if you’re using cookies (refresh tokens)
         allow_methods=["*"],
         allow_headers=["*"],
     )

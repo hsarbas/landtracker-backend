@@ -1,7 +1,8 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
 from app.services.vision import detect_text
+from app.core.deps import get_current_user
 
-router = APIRouter(prefix="/ocr", tags=["OCR"])
+router = APIRouter(prefix="/api/v1/ocr", tags=["OCR"], dependencies=[Depends(get_current_user)])
 ALLOWED = {"image/png", "image/jpeg", "application/pdf"}
 
 

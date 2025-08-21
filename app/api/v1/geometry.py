@@ -1,12 +1,13 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from typing import List
 from app.schemas.geometry import Payload
 from app.services.geodesy import next_point
+from app.core.deps import get_current_user
 
-router = APIRouter(prefix="/boundaries", tags=["Geometry"])
+router = APIRouter(prefix="/api/v1/geometry", tags=["Geometry"], dependencies=[Depends(get_current_user)])
 
 
-@router.post("", response_model=List[List[float]])
+@router.post("/boundaries", response_model=List[List[float]])
 def boundaries(payload: Payload):
     out: List[List[float]] = []
     curr_lat, curr_lon = payload.tie_lat, payload.tie_lon

@@ -1,8 +1,9 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pyproj import Transformer
 from app.schemas.geometry import NERequest, LonLatResponse
+from app.core.deps import get_current_user
 
-router = APIRouter(prefix="/convert", tags=["Convert"])
+router = APIRouter(prefix="/api/v1/convert", tags=["Convert"], dependencies=[Depends(get_current_user)])
 
 
 @router.post("/prs92-zone3", response_model=LonLatResponse)

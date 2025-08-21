@@ -1,11 +1,12 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from app.schemas.parsing import DescriptionRequest, ParseResponse, BoundaryPoint
 from app.services.parsing import parse_land_title
+from app.core.deps import get_current_user
 
-router = APIRouter(prefix="/parse", tags=["Parsing"])
+router = APIRouter(prefix="/api/v1/parsing", tags=["Parsing"], dependencies=[Depends(get_current_user)])
 
 
-@router.post("", response_model=ParseResponse)
+@router.post("/description", response_model=ParseResponse)
 async def parse_description(req: DescriptionRequest):
     try:
         tie_point, boundaries = parse_land_title(req.description)
