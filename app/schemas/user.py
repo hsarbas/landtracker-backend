@@ -2,7 +2,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel, Field, EmailStr
-from app.models.user import Role
+from app.schemas.role import RoleRead
 
 
 def normalize_ph_mobile(msisdn: str) -> str:
@@ -30,6 +30,8 @@ class UserCreate(BaseModel):
     first_name: Optional[str]
     last_name: Optional[str]
     email: Optional[EmailStr]
+    # optional: let backend default to "client" if not provided
+    role_id: Optional[int] = None
 
 
 class UserLogin(BaseModel):
@@ -43,12 +45,12 @@ class UserRead(BaseModel):
     email: Optional[EmailStr] = None
     first_name: Optional[str]
     last_name: Optional[str]
-    role: Role
     is_active: bool
     created_at: datetime
+    role: RoleRead  # embed the role object
 
     class Config:
-        from_attributes = True  # Pydantic v2
+        from_attributes = True
 
 
 class UserUpdate(BaseModel):
@@ -74,7 +76,7 @@ class RefreshRequest(BaseModel):
 
 
 class SetRoleRequest(BaseModel):
-    role: Role
+    role_id: int
 
 
 class LogoutResponse(BaseModel):

@@ -1,18 +1,17 @@
-# app/main.py
 from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
-from app.core.config import settings, configure_cors
+from sqlalchemy.orm import Session
+
+from app.core.config import settings, configure_cors, ADMIN_EMAIL, ADMIN_PASSWORD, ADMIN_MOBILE, CapacitorOriginFix
 from app.core.exceptions import validation_exception_handler
-from app.db.session import init_models
-from app.api.v1 import ocr, geometry, parsing, tie_points, convert, users
+from app.db.session import init_models, SessionLocal
 
-from app.db.session import SessionLocal
-from app.models.user import User, Role
+from app.models.user import User
+from app.models.role import Role
 from app.core.security import hash_password
-from app.core.config import ADMIN_EMAIL, ADMIN_PASSWORD, ADMIN_MOBILE
 
-# Routers
+# Routers (import once, include once)
 from app.api.v1.auth import router as auth_router
 from app.api.v1.admin import router as admin_router
 from app.api.v1.convert import router as convert_router
@@ -21,67 +20,72 @@ from app.api.v1.ocr import router as ocr_router
 from app.api.v1.parsing import router as parsing_router
 from app.api.v1.tie_points import router as tie_points_router
 from app.api.v1.users import router as users_router
-from starlette.types import ASGIApp, Receive, Scope, Send
-
-
-class CapacitorOriginFix:
-    def __init__(self, app): self.app = app
-
-    async def __call__(self, scope, receive, send):
-        if scope["type"] == "http":
-            headers = scope.get("headers") or []
-            fixed = []
-            for k, v in headers:
-                if k == b'origin' and v == b'capacitor://localhost':
-                    fixed.append((b'origin', b'http://localhost'))
-                else:
-                    fixed.append((k, v))
-            scope = {**scope, "headers": fixed}
-        await self.app(scope, receive, send)
-
 
 app = FastAPI(title=settings.app_name)
-app.add_middleware(CapacitorOriginFix)
 configure_cors(app)
+app.add_middleware(CapacitorOriginFix)
 
-# Routers
-app.include_router(ocr.router)
-app.include_router(geometry.router)
-app.include_router(parsing.router)
-app.include_router(tie_points.router)
-app.include_router(convert.router)
-
-
+# Global exception handlers
 app.add_exception_handler(RequestValidationError, validation_exception_handler)
 
 
-@app.on_event("startup")
-def _startup():
-    init_models()
+def _get_or_create_role(db: Session, name: str, desc: str | None = None) -> Role:
+    role = db.query(Role).filter(Role.name == name).first()
+    if not role:
+        role = Role(name=name, description=desc)
+        db.add(role)
+        db.flush()  # get role.id
+    return role
 
 
-# Ensure first admin on startup
 @app.on_event("startup")
-def ensure_admin():
+def on_startup():
+    """
+    - Create tables
+    - Seed roles (client/partner/admin)
+    - Ensure a first admin user using ADMIN_* settings (idempotent)
+    """
     init_models()
 
     with SessionLocal() as db:
-        exists = db.query(User).filter(User.role == Role.admin).first()
-        if not exists:
-            admin = User(
-                mobile=ADMIN_MOBILE,  # <<< REQUIRED
-                email=ADMIN_EMAIL.lower(),  # optional (can be None)
+        # Seed roles
+        client_role = _get_or_create_role(db, "client", "Default role for new users")
+        partner_role = _get_or_create_role(db, "partner", "Partner role")
+        admin_role = _get_or_create_role(db, "admin", "Administrator role")
+
+        # Ensure first admin (idempotent)
+        admin_mobile = (ADMIN_MOBILE or "").strip()
+        admin_email = (ADMIN_EMAIL or "").strip().lower() or None
+
+        # Try to find an existing admin by mobile/email or by role_id
+        admin_user = None
+        if admin_mobile:
+            admin_user = db.query(User).filter(User.mobile == admin_mobile).first()
+        if not admin_user and admin_email:
+            admin_user = db.query(User).filter(User.email == admin_email).first()
+        if not admin_user:
+            admin_user = db.query(User).filter(User.role_id == admin_role.id).first()
+
+        if not admin_user:
+            if not admin_mobile:
+                # Minimal guard rail—don’t create a broken admin
+                raise RuntimeError("ADMIN_MOBILE is required to seed the first admin user.")
+            admin_user = User(
+                mobile=admin_mobile,
+                email=admin_email,
                 hashed_password=hash_password(ADMIN_PASSWORD),
                 first_name="Admin",
                 last_name="Admin",
-                role=Role.admin,
-                is_verified=True,  # skip OTP for seeded admin
+                role_id=admin_role.id,  # FK (no enum)
+                is_verified=True,       # seed skips OTP
+                is_active=True,
             )
-            db.add(admin)
-            db.commit()
+            db.add(admin_user)
+
+        db.commit()
 
 
-# Mount API v1 routers
+# Mount API v1 routers (once)
 app.include_router(auth_router)
 app.include_router(admin_router)
 app.include_router(convert_router)
@@ -91,11 +95,25 @@ app.include_router(parsing_router)
 app.include_router(tie_points_router)
 app.include_router(users_router)
 
-
-@app.middleware("http")
-async def _log_login(request, call_next):
-    if request.url.path.endswith("/api/v1/auth/login"):
-        print("Method:", request.method,
-              "| Origin:", request.headers.get("origin"),
-              "| UA:", request.headers.get("user-agent"))
-    return await call_next(request)
+# --- Optional request logging helpers you had before ---
+# @app.middleware("http")
+# async def _log_login(request, call_next):
+#     if request.url.path.endswith("/api/v1/auth/login"):
+#         print("Method:", request.method,
+#               "| Origin:", request.headers.get("origin"),
+#               "| UA:", request.headers.get("user-agent"))
+#     return await call_next(request)
+#
+# @app.middleware("http")
+# async def _cors_probe(request, call_next):
+#     if request.headers.get("origin"):
+#         print(">> ORIGIN:", request.headers.get("origin"),
+#               "| METHOD:", request.method,
+#               "| PATH:", request.url.path,
+#               "| REQ-HDRS:", {k: v for k, v in request.headers.items()
+#                               if k.lower().startswith(("access-control","sec-")) or k.lower() in ("origin","referer")})
+#     resp = await call_next(request)
+#     cors_hdrs = {k: v for k, v in resp.headers.items() if k.lower().startswith("access-control")}
+#     if cors_hdrs:
+#         print("<< CORS RESP:", cors_hdrs)
+#     return resp

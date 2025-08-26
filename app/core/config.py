@@ -1,7 +1,9 @@
 from typing import List, Optional
 from urllib.parse import quote_plus
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+# from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.cors import CORSMiddleware
+from typing import Iterable, List, Tuple
 from pydantic_settings import BaseSettings, SettingsConfigDict
 import os
 
@@ -28,13 +30,55 @@ OTP_MAX_ATTEMPTS = int(os.getenv("OTP_MAX_ATTEMPTS", 5))
 OTP_RESEND_COOLDOWN_SECONDS = int(os.getenv("OTP_RESEND_COOLDOWN_SECONDS", 60))
 
 ALLOWED_ORIGINS = [
+    "http://localhost",            # REQUIRED (shim rewrites Origin to this)
     "http://localhost:9000",
     "http://127.0.0.1:9000",
-    "http://192.168.1.9:9000",
     "http://192.168.1.7:9500",
     "capacitor://localhost",
-    # "https://your-production-domain.com",   # add when you deploy
+    "ionic://localhost",
 ]
+
+
+class CapacitorOriginFix:
+    def __init__(self, app, capacitor_origins=("capacitor://localhost","ionic://localhost")):
+        self.app = app
+        self.capacitor_origins = set(capacitor_origins)
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") != "http":
+            return await self.app(scope, receive, send)
+
+        headers = list(scope.get("headers") or [])
+        orig_origin = None
+        for k, v in headers:
+            if k.lower() == b"origin":
+                orig_origin = v.decode()
+                break
+
+        replaced = False
+        if orig_origin and orig_origin in self.capacitor_origins:
+            new_headers = [(k, v) for (k, v) in headers if k.lower() != b"origin"]
+            new_headers.append((b"origin", b"http://localhost"))
+            scope["headers"] = new_headers
+            replaced = True
+
+        async def send_wrapper(message):
+            if replaced and message["type"] == "http.response.start":
+                hdrs = list(message.get("headers") or [])
+                # replace or add ACAO with the real capacitor origin
+                for i, (k, v) in enumerate(hdrs):
+                    if k.lower() == b"access-control-allow-origin":
+                        hdrs[i] = (k, orig_origin.encode())
+                        break
+                else:
+                    hdrs.append((b"access-control-allow-origin", orig_origin.encode()))
+                if not any(k.lower() == b"vary" for k, _ in hdrs):
+                    hdrs.append((b"vary", b"Origin"))
+                message["headers"] = hdrs
+            await send(message)
+
+        return await self.app(scope, receive, send_wrapper)
+
 
 
 class Settings(BaseSettings):
@@ -73,10 +117,12 @@ settings = Settings()
 
 
 def configure_cors(app):
+    http_origins = [o for o in ALLOWED_ORIGINS if o.startswith("http")]
+    print("CORS allow_origins =>", http_origins)  # ADD THIS LOG
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=ALLOWED_ORIGINS,
-        allow_credentials=True,   # required if you’re using cookies (refresh tokens)
+        allow_origins=http_origins,
+        allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )

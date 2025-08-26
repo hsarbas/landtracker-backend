@@ -1,21 +1,15 @@
 from __future__ import annotations
-import enum
 from datetime import datetime, timezone
 from typing import Optional
 from sqlalchemy import (
-    Column, String, Boolean, DateTime, Integer, Enum as SAEnum, UniqueConstraint
+    Column, String, Boolean, DateTime, Integer, ForeignKey, UniqueConstraint
 )
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
 
-class Role(str, enum.Enum):
-    client = "client"
-    partner = "partner"
-    admin = "admin"
-
-
 class User(Base):
+
     __tablename__ = "users"
     __table_args__ = (
         UniqueConstraint("mobile", name="uq_users_mobile"),
@@ -28,7 +22,12 @@ class User(Base):
     first_name = Column(String(100), nullable=True)
     last_name = Column(String(100), nullable=True)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
-    role: Mapped[Role] = mapped_column(SAEnum(Role), default=Role.client, nullable=False)
+
+    role_id: Mapped[int] = mapped_column(
+        ForeignKey("roles.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    role = relationship("Role", back_populates="users")
+
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     # phone verification

@@ -9,7 +9,8 @@ from passlib.context import CryptContext
 
 from app.schemas.user import UserCreate, UserLogin, UserRead, TokenPair, LogoutResponse, normalize_ph_mobile
 from app.schemas.otp import OtpRequest, OtpConfirm, OtpStatus
-from app.models.user import User, Role
+from app.models.user import User
+from app.models.role import Role
 from app.models.refresh_token import RefreshToken
 from app.models.otp_code import OtpCode, OtpPurpose
 from app.core.security import (
@@ -138,16 +139,37 @@ def _issue_otp_respecting_cooldown(db: Session, user: User) -> None:
     _create_or_replace_otp(db, user)
 
 
+# ----------------- Role helpers (NEW) -----------------
+def _get_role_or_bootstrap(db: Session, name: str) -> Role:
+    """Fetch a role by name; if missing, create it (keeps environments resilient)."""
+    role = db.query(Role).filter(Role.name == name).first()
+    if not role:
+        role = Role(name=name, description=f"{name} role")
+        db.add(role)
+        db.flush()  # get role.id without full commit
+    return role
+
+
+def _user_role_name(user: User) -> str:
+    """Always return a string role name for JWTs."""
+    # relationship may be lazy; make sure role is present
+    return user.role.name if getattr(user, "role", None) else "client"
+
+
 # ----------------- Endpoints -----------------
 @router.post("/register", response_model=UserRead, status_code=201)
 def register(payload: UserCreate, db: Session = Depends(get_db)):
     mobile = normalize_ph_mobile(payload.mobile)
+
+    # ★ default to 'client' role via FK
+    role = _get_role_or_bootstrap(db, "client")
+
     user = User(
         mobile=mobile,
         hashed_password=hash_password(payload.password),
         first_name=payload.first_name,
         last_name=payload.last_name,
-        role=Role.client,
+        role_id=role.id,  # ★ FK instead of enum
         is_verified=False,
         email=payload.email,
     )
@@ -326,10 +348,8 @@ def login(payload: UserLogin, response: Response, request: Request, db: Session 
     if not user or not verify_password(payload.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Incorrect mobile or password")
 
-    # If not verified: automatically send (or re-send) OTP and block login.
     if not user.is_verified:
         _issue_otp_respecting_cooldown(db, user)
-        # Return a structured 403 so the frontend can branch on it
         raise HTTPException(
             status_code=403,
             detail={
@@ -343,10 +363,12 @@ def login(payload: UserLogin, response: Response, request: Request, db: Session 
             },
         )
 
-    # Normal login for verified users
-    access = create_access_token(user.id, user.role.value)
+    # ★ Use string role name from related Role
+    role_name = _user_role_name(user)
+
+    access = create_access_token(user.id, role_name)
     jti = uuid.uuid4().hex
-    refresh = create_refresh_token(user.id, user.role.value, jti=jti)
+    refresh = create_refresh_token(user.id, role_name, jti=jti)
 
     rt = RefreshToken(
         jti=jti,
@@ -398,8 +420,11 @@ def refresh_token(request: Request, response: Response, db: Session = Depends(ge
         db.rollback()
         raise HTTPException(status_code=401, detail="Inactive or missing user")
 
+    # ★ Use role name string again
+    role_name = _user_role_name(user)
+
     new_jti = uuid.uuid4().hex
-    new_refresh = create_refresh_token(user.id, user.role.value, jti=new_jti)
+    new_refresh = create_refresh_token(user.id, role_name, jti=new_jti)
     new_row = RefreshToken(
         jti=new_jti,
         user_id=user.id,
@@ -413,7 +438,7 @@ def refresh_token(request: Request, response: Response, db: Session = Depends(ge
 
     _set_refresh_cookie(response, new_refresh, new_row.expires_at)
 
-    access = create_access_token(user.id, user.role.value)
+    access = create_access_token(user.id, role_name)
     return TokenPair(access_token=access, refresh_token="", expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60)
 
 
