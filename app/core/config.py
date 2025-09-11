@@ -22,7 +22,6 @@ REFRESH_COOKIE_PATH = os.environ.get("REFRESH_COOKIE_PATH", "/api/v1/auth/refres
 REFRESH_COOKIE_SAMESITE = os.environ.get("REFRESH_COOKIE_SAMESITE", "none")  # "lax" or "none"
 REFRESH_COOKIE_SECURE = os.environ.get("REFRESH_COOKIE_SECURE", "false").lower() == "true"
 REFRESH_COOKIE_HTTPONLY = True  # always True for security
-CORS_ALLOW_ORIGINS = os.environ.get("CORS_ALLOW_ORIGINS", "*").split(",")  # set your FE origin(s) in prod
 
 OTP_LENGTH = int(os.getenv("OTP_LENGTH", 6))
 OTP_TTL_MINUTES = int(os.getenv("OTP_TTL_MINUTES", 5))
@@ -34,13 +33,14 @@ ALLOWED_ORIGINS = [
     "http://localhost:9000",
     "http://127.0.0.1:9000",
     "http://192.168.1.7:9500",
+    "http://192.168.1.32:9500",
     "capacitor://localhost",
     "ionic://localhost",
 ]
 
 
 class CapacitorOriginFix:
-    def __init__(self, app, capacitor_origins=("capacitor://localhost","ionic://localhost")):
+    def __init__(self, app, capacitor_origins=("capacitor://localhost", "ionic://localhost")):
         self.app = app
         self.capacitor_origins = set(capacitor_origins)
 
@@ -78,7 +78,6 @@ class CapacitorOriginFix:
             await send(message)
 
         return await self.app(scope, receive, send_wrapper)
-
 
 
 class Settings(BaseSettings):
