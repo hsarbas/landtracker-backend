@@ -20,7 +20,6 @@ def _redact_key(u: str) -> str:
 
 
 @router.get("/staticmap-proxy")
-@router.get("/staticmap-proxy/")  # tolerate trailing slash
 async def staticmap_proxy(url: str = Query(..., description="Full Google Static Maps URL")):
     # Decode once (your logs show %2F etc., which is normal for query encoding)
     decoded = unquote(url)
