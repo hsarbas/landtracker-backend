@@ -100,26 +100,26 @@ app.include_router(users_router)
 app.include_router(report_pdf_router)
 
 
-# --- Optional request logging helpers you had before ---
-@app.middleware("http")
-async def _log_login(request, call_next):
-    if request.url.path.endswith("/api/v1/auth/login"):
-        print("Method:", request.method,
-              "| Origin:", request.headers.get("origin"),
-              "| UA:", request.headers.get("user-agent"))
-    return await call_next(request)
-
-
-@app.middleware("http")
-async def _cors_probe(request, call_next):
-    if request.headers.get("origin"):
-        print(">> ORIGIN:", request.headers.get("origin"),
-              "| METHOD:", request.method,
-              "| PATH:", request.url.path,
-              "| REQ-HDRS:", {k: v for k, v in request.headers.items()
-                              if k.lower().startswith(("access-control","sec-")) or k.lower() in ("origin","referer")})
-    resp = await call_next(request)
-    cors_hdrs = {k: v for k, v in resp.headers.items() if k.lower().startswith("access-control")}
-    if cors_hdrs:
-        print("<< CORS RESP:", cors_hdrs)
-    return resp
+# --- Optional request logging helpers ---
+# @app.middleware("http")
+# async def _log_login(request, call_next):
+#     if request.url.path.endswith("/api/v1/auth/login"):
+#         print("Method:", request.method,
+#               "| Origin:", request.headers.get("origin"),
+#               "| UA:", request.headers.get("user-agent"))
+#     return await call_next(request)
+#
+#
+# @app.middleware("http")
+# async def _cors_probe(request, call_next):
+#     if request.headers.get("origin"):
+#         print(">> ORIGIN:", request.headers.get("origin"),
+#               "| METHOD:", request.method,
+#               "| PATH:", request.url.path,
+#               "| REQ-HDRS:", {k: v for k, v in request.headers.items()
+#                               if k.lower().startswith(("access-control","sec-")) or k.lower() in ("origin","referer")})
+#     resp = await call_next(request)
+#     cors_hdrs = {k: v for k, v in resp.headers.items() if k.lower().startswith("access-control")}
+#     if cors_hdrs:
+#         print("<< CORS RESP:", cors_hdrs)
+#     return resp

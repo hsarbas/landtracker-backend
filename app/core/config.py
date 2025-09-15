@@ -19,8 +19,8 @@ ADMIN_MOBILE = os.environ.get("ADMIN_MOBILE", "+639123456789")
 
 REFRESH_COOKIE_NAME = os.environ.get("REFRESH_COOKIE_NAME", "rt")
 REFRESH_COOKIE_PATH = os.environ.get("REFRESH_COOKIE_PATH", "/api/v1/auth/refresh")
-REFRESH_COOKIE_SAMESITE = os.environ.get("REFRESH_COOKIE_SAMESITE", "none")  # "lax" or "none"
-REFRESH_COOKIE_SECURE = os.environ.get("REFRESH_COOKIE_SECURE", "false").lower() == "true"
+REFRESH_COOKIE_SAMESITE = os.environ.get("REFRESH_COOKIE_SAMESITE", "lax")  # "lax" or "none"
+REFRESH_COOKIE_SECURE = os.environ.get("REFRESH_COOKIE_SECURE", "false")
 REFRESH_COOKIE_HTTPONLY = True  # always True for security
 
 OTP_LENGTH = int(os.getenv("OTP_LENGTH", 6))
@@ -117,7 +117,7 @@ settings = Settings()
 
 def configure_cors(app):
     http_origins = [o for o in ALLOWED_ORIGINS if o.startswith("http")]
-    print("CORS allow_origins =>", http_origins)  # ADD THIS LOG
+    # print("CORS allow_origins =>", http_origins)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=http_origins,
