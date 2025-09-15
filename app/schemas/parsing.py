@@ -16,5 +16,10 @@ class BoundaryPoint(BaseModel):
 
 
 class ParseResponse(BaseModel):
+    # NEW: meta fields expected by your frontend
+    title_number: Optional[str] = None
+    owner: Optional[str] = None
+    technical_description: str
+
     tie_point: str
     boundaries: List[BoundaryPoint]

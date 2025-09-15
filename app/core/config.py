@@ -1,44 +1,122 @@
-from typing import List, Optional
+# app/core/config.py
+from __future__ import annotations
+from typing import Optional, List, Literal
 from urllib.parse import quote_plus
-from fastapi import FastAPI
-# from fastapi.middleware.cors import CORSMiddleware
-from starlette.middleware.cors import CORSMiddleware
-from typing import Iterable, List, Tuple
 from pydantic_settings import BaseSettings, SettingsConfigDict
-import os
-
-SECRET_KEY = os.environ.get("SECRET_KEY", "dev-super-secret-change-me")
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.environ.get("ACCESS_EXPIRE_MIN", 30))
-REFRESH_TOKEN_EXPIRE_DAYS = int(os.environ.get("REFRESH_EXPIRE_DAYS", 7))
-
-# DB is already configured in your project via app/db/session.py -> just keep using it.
-ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "admin@admin.com")
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "AdminPass123!")
-ADMIN_MOBILE = os.environ.get("ADMIN_MOBILE", "+639123456789")
-
-REFRESH_COOKIE_NAME = os.environ.get("REFRESH_COOKIE_NAME", "rt")
-REFRESH_COOKIE_PATH = os.environ.get("REFRESH_COOKIE_PATH", "/api/v1/auth/refresh")
-REFRESH_COOKIE_SAMESITE = os.environ.get("REFRESH_COOKIE_SAMESITE", "lax")  # "lax" or "none"
-REFRESH_COOKIE_SECURE = os.environ.get("REFRESH_COOKIE_SECURE", "false")
-REFRESH_COOKIE_HTTPONLY = True  # always True for security
-
-OTP_LENGTH = int(os.getenv("OTP_LENGTH", 6))
-OTP_TTL_MINUTES = int(os.getenv("OTP_TTL_MINUTES", 5))
-OTP_MAX_ATTEMPTS = int(os.getenv("OTP_MAX_ATTEMPTS", 5))
-OTP_RESEND_COOLDOWN_SECONDS = int(os.getenv("OTP_RESEND_COOLDOWN_SECONDS", 60))
-
-ALLOWED_ORIGINS = [
-    "http://localhost",            # REQUIRED (shim rewrites Origin to this)
-    "http://localhost:9000",
-    "http://127.0.0.1:9000",
-    "http://192.168.1.7:9500",
-    "http://192.168.1.32:9500",
-    "capacitor://localhost",
-    "ionic://localhost",
-]
+from pydantic import Field, field_validator
+from starlette.middleware.cors import CORSMiddleware
 
 
+class Settings(BaseSettings):
+    # Pydantic Settings
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",          # ignore unknown env keys safely
+        case_sensitive=False,
+    )
+
+    # --- App ---
+    app_name: str = "LandTracker"
+    creds_path: str = Field("keys/vision-ocr.json", alias="GOOGLE_VISION_CREDS_PATH")
+
+    # --- Security / JWT ---
+    secret_key: str = Field("dev-super-secret-change-me", alias="SECRET_KEY")
+    algorithm: str = Field("HS256", alias="JWT_ALGORITHM")
+    access_token_expire_minutes: int = Field(30, alias="ACCESS_EXPIRE_MIN")
+    refresh_token_expire_days: int = Field(7, alias="REFRESH_EXPIRE_DAYS")
+
+    # --- Admin seed ---
+    admin_email: Optional[str] = Field("admin@admin.com", alias="ADMIN_EMAIL")
+    admin_password: str = Field("AdminPass123!", alias="ADMIN_PASSWORD")
+    admin_mobile: Optional[str] = Field("+639123456789", alias="ADMIN_MOBILE")
+
+    # --- Refresh cookie config ---
+    refresh_cookie_name: str = Field("rt", alias="REFRESH_COOKIE_NAME")
+    refresh_cookie_path: str = Field("/api/v1/auth/refresh", alias="REFRESH_COOKIE_PATH")
+    refresh_cookie_samesite: Literal["lax", "none", "strict"] = Field("lax", alias="REFRESH_COOKIE_SAMESITE")
+    refresh_cookie_secure: bool = Field(False, alias="REFRESH_COOKIE_SECURE")
+    refresh_cookie_httponly: bool = True  # always True
+
+    # --- OTP ---
+    otp_length: int = Field(6, alias="OTP_LENGTH")
+    otp_ttl_minutes: int = Field(5, alias="OTP_TTL_MINUTES")
+    otp_max_attempts: int = Field(5, alias="OTP_MAX_ATTEMPTS")
+    otp_resend_cooldown_seconds: int = Field(60, alias="OTP_RESEND_COOLDOWN_SECONDS")
+
+    # --- Directories / Paths ---
+    title_img_dir: str = Field("resources/uploads/title_images", alias="TITLE_IMG_DIR")
+    reports_dir: str = Field("resources/reports", alias="LT_REPORTS_DIR")
+    lt_logo_path: str = Field("app/static/logo.png", alias="LT_LOGO_PATH")
+
+    # --- Database ---
+    database_url: Optional[str] = Field(None, alias="DATABASE_URL")  # full URL override
+    db_user: str = Field("landtracker", alias="DB_USER")
+    db_password: str = Field("landtrackerpw1234", alias="DB_PASSWORD")
+    db_host: str = Field("127.0.0.1", alias="DB_HOST")
+    db_port: int = Field(5433, alias="DB_PORT")
+    db_name: str = Field("landtracker_db", alias="DB_NAME")
+
+    # --- CORS ---
+    # Comma-separated in .env or leave default list
+    allowed_origins: List[str] = [
+        "http://localhost",
+        "http://localhost:9000",
+        "http://127.0.0.1:9000",
+        "http://192.168.1.7:9500",
+        "http://192.168.1.32:9500",
+        "capacitor://localhost",
+        "ionic://localhost",
+    ]
+
+    @field_validator("allowed_origins", mode="before")
+    @classmethod
+    def _parse_origins(cls, v):
+        # Accept "a,b,c" or JSON array; pass lists through.
+        if v is None:
+            return []
+        if isinstance(v, str):
+            return [s.strip() for s in v.split(",") if s.strip()]
+        return v
+
+    @property
+    def sqlalchemy_url(self) -> str:
+        if self.database_url:
+            return self.database_url
+        return (
+            "postgresql+psycopg2://"
+            f"{self.db_user}:{quote_plus(self.db_password)}@"
+            f"{self.db_host}:{self.db_port}/{self.db_name}"
+        )
+
+
+settings = Settings()
+
+# --- Backwards-compatible module-level constants (if other modules import them) ---
+SECRET_KEY = settings.secret_key
+ALGORITHM = settings.algorithm
+ACCESS_TOKEN_EXPIRE_MINUTES = settings.access_token_expire_minutes
+REFRESH_TOKEN_EXPIRE_DAYS = settings.refresh_token_expire_days
+
+ADMIN_EMAIL = settings.admin_email
+ADMIN_PASSWORD = settings.admin_password
+ADMIN_MOBILE = settings.admin_mobile
+
+REFRESH_COOKIE_NAME = settings.refresh_cookie_name
+REFRESH_COOKIE_PATH = settings.refresh_cookie_path
+REFRESH_COOKIE_SAMESITE = settings.refresh_cookie_samesite
+REFRESH_COOKIE_SECURE = settings.refresh_cookie_secure
+REFRESH_COOKIE_HTTPONLY = settings.refresh_cookie_httponly
+
+OTP_LENGTH = settings.otp_length
+OTP_TTL_MINUTES = settings.otp_ttl_minutes
+OTP_MAX_ATTEMPTS = settings.otp_max_attempts
+OTP_RESEND_COOLDOWN_SECONDS = settings.otp_resend_cooldown_seconds
+
+ALLOWED_ORIGINS = settings.allowed_origins  # used by CapacitorOriginFix/configure_cors
+
+
+# --- CORS helpers (unchanged call sites) ---
 class CapacitorOriginFix:
     def __init__(self, app, capacitor_origins=("capacitor://localhost", "ionic://localhost")):
         self.app = app
@@ -65,7 +143,6 @@ class CapacitorOriginFix:
         async def send_wrapper(message):
             if replaced and message["type"] == "http.response.start":
                 hdrs = list(message.get("headers") or [])
-                # replace or add ACAO with the real capacitor origin
                 for i, (k, v) in enumerate(hdrs):
                     if k.lower() == b"access-control-allow-origin":
                         hdrs[i] = (k, orig_origin.encode())
@@ -80,44 +157,8 @@ class CapacitorOriginFix:
         return await self.app(scope, receive, send_wrapper)
 
 
-class Settings(BaseSettings):
-    # --- App ---
-    app_name: str = "LandTracker"
-    creds_path: str = "keys/vision-ocr.json"
-
-    # --- DB settings ---
-    # Prefer a single DATABASE_URL, but also support individual parts
-    database_url: Optional[str] = None          # e.g. postgresql+psycopg2://user:pass@host:5432/db
-    db_user: str = "landtracker"
-    db_password: str = "landtrackerpw1234"                        # will be URL-escaped
-    db_host: str = "127.0.0.1"
-    db_port: int = 5433
-    db_name: str = "landtracker_db"
-
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        extra="ignore",
-    )
-
-    @property
-    def sqlalchemy_url(self) -> str:
-        """Build the SQLAlchemy URL, allowing DATABASE_URL override."""
-        if self.database_url:
-            return self.database_url
-        return (
-            "postgresql+psycopg2://"
-            f"{self.db_user}:{quote_plus(self.db_password)}@"
-            f"{self.db_host}:{self.db_port}/{self.db_name}"
-        )
-
-
-settings = Settings()
-
-
 def configure_cors(app):
-    http_origins = [o for o in ALLOWED_ORIGINS if o.startswith("http")]
-    # print("CORS allow_origins =>", http_origins)
+    http_origins = [o for o in settings.allowed_origins if o.startswith("http")]
     app.add_middleware(
         CORSMiddleware,
         allow_origins=http_origins,

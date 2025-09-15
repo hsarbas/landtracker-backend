@@ -1,9 +1,9 @@
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from urllib.parse import urlsplit
-import io
-import httpx
-import os
+from sqlalchemy.orm import Session
+import io, httpx, os
+from datetime import datetime
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.utils import ImageReader
@@ -12,14 +12,23 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 from xml.sax.saxutils import escape
 from app.core.deps import get_current_user
+from app.core.config import settings
 from app.schemas.report_pdf import ReportData
+from app.db.session import get_db
+from app.models.property_report import PropertyReport
+from app.models.property import Property  # to verify ownership
 
 router = APIRouter(prefix="/api/v1/report_pdf", tags=["reports"], dependencies=[Depends(get_current_user)])
 
 # ---------- logo config ----------
-LOGO_PATH = os.getenv("LT_LOGO_PATH", "app/static/logo.png")  # adjust as needed
 LOGO_MAX_H = 55  # points
 LOGO_MAX_W = 72  # points (to prevent super-wide logos)
+LOGO_PATH = settings.lt_logo_path
+REPORTS_DIR = settings.reports_dir
+
+
+def _ensure_dir(p: str) -> None:
+    os.makedirs(p, exist_ok=True)
 
 
 # ---------- helpers ----------
@@ -197,59 +206,69 @@ def _draw_summary_table(c: canvas.Canvas, page_w: float, y: float, table: Table)
 
 
 @router.post("", response_class=StreamingResponse, summary="Generate Land Tracker PDF (server-side)")
-async def generate_report_pdf(payload: ReportData):
+async def generate_report_pdf(
+    payload: ReportData,
+    property_id: int | None = None,                   # <-- pass this to persist under a property
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
     page_w, page_h = A4
 
-    # Header (returns y under its separator)
     y = _draw_header(c, page_w, page_h)
-
-    # Build & measure summary to reserve exact space below snapshot
     table = _make_summary_table(page_w, payload.title_id, payload.owner, payload.tech_desc)
-    # heading(16) + table height + gap(10) + separator(0) + gap after sep(10)
     avail_w = page_w - (2 * 28)
     _, table_h = table.wrapOn(c, avail_w, 0)
-    reserved_for_summary = 16 + table_h + 10 + 0 + 10
+    reserved_for_summary = 16 + table_h + 10 + 10
 
-    # --- Map Snapshot (FIRST) ---
     c.setFont("Helvetica-Bold", 12)
-    # c.drawString(40, y - 18, "Map Snapshot")
-    y -= 15  # give some space before image
+    y -= 15
 
     if payload.snapshot:
         try:
             img_bytes = await _fetch_image_bytes(str(payload.snapshot))
             y = _draw_snapshot(c, page_w, y, img_bytes, reserve_below=reserved_for_summary)
-        except HTTPException:
-            c.setFont("Helvetica", 9)
-            c.drawString(40, y, "Snapshot could not be embedded (fetch error).")
-            y -= 14
-            _hr(c, page_w, y); y -= 10
         except Exception:
             c.setFont("Helvetica", 9)
-            c.drawString(40, y, "Snapshot could not be embedded (unexpected error).")
+            c.drawString(40, y, "Snapshot could not be embedded.")
             y -= 14
-            _hr(c, page_w, y); y -= 10
-    else:
-        c.setFont("Helvetica", 9)
-        c.drawString(40, y, "—")
-        y -= 14
-        _hr(c, page_w, y); y -= 5
 
-    # --- Summary (SECOND) ---
     y = _draw_summary_table(c, page_w, y, table)
-
-    # Footer
     c.setFont("Helvetica", 8)
     c.drawRightString(page_w - 28, 18, "Page 1")
-
     c.showPage()
     c.save()
-    buf.seek(0)
 
+    buf.seek(0)
+    pdf_bytes = buf.getvalue()
+
+    saved_path = None
+    if property_id is not None:
+        # Optional: verify the property belongs to the current user
+        prop = db.get(Property, property_id)
+        if not prop or prop.user_id != user.id:
+            raise HTTPException(status_code=403, detail="Not your property")
+
+        # Save to disk
+        _ensure_dir(REPORTS_DIR)
+        user_dir = os.path.join(REPORTS_DIR, str(user.id))
+        _ensure_dir(user_dir)
+        fname = f"LandTracker_Report_p{property_id}_{datetime.now().strftime('%Y%m%d-%H%M%S')}.pdf"
+        saved_path = os.path.join(user_dir, fname)
+        with open(saved_path, "wb") as f:
+            f.write(pdf_bytes)
+
+        # Record in DB
+        db.add(PropertyReport(property_id=property_id, file_path=saved_path, report_type="pdf"))
+        db.commit()
+
+    # Stream back (and expose where it was saved if applicable)
     return StreamingResponse(
-        buf,
+        io.BytesIO(pdf_bytes),
         media_type="application/pdf",
-        headers={"Content-Disposition": 'inline; filename="LandTracker_Report.pdf"'}
+        headers={
+            "Content-Disposition": f'inline; filename="LandTracker_Report.pdf"',
+            "X-Report-Path": saved_path or "",
+        },
     )

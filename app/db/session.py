@@ -1,9 +1,9 @@
+# app/db/session.py
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from app.core.config import settings
-from .base import Base
+from app.db.base import Base  # <- use the single Base
 
-# Use the URL assembled by Settings
 engine = create_engine(settings.sqlalchemy_url, pool_pre_ping=True)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
@@ -17,6 +17,9 @@ def get_db():
 
 
 def init_models():
-    # import models so metadata is populated
-    from app.models import tie_point  # noqa: F401
+    # Import ALL model modules so metadata is populated before create_all
+    from app.models import (
+        user, role, refresh_token, otp_code, tie_point,  # existing
+        property as prop, property_image, property_boundary, property_report  # NEW
+    )  # noqa: F401
     Base.metadata.create_all(bind=engine)

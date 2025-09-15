@@ -14,10 +14,14 @@ def boundaries(payload: Payload):
 
     for b in payload.boundaries:
         angle = b.deg + b.min / 60.0
-        if b.ns == "N" and b.ew == "E": theta = angle
-        elif b.ns == "N" and b.ew == "W": theta = 360 - angle
-        elif b.ns == "S" and b.ew == "E": theta = 180 - angle
-        else: theta = 180 + angle
+        if b.ns == "N" and b.ew == "E":
+            theta = angle
+        elif b.ns == "N" and b.ew == "W":
+            theta = 360 - angle
+        elif b.ns == "S" and b.ew == "E":
+            theta = 180 - angle
+        else:
+            theta = 180 + angle
 
         lat2, lon2 = next_point(curr_lat, curr_lon, theta, b.distance)
         out.append([lon2, lat2])

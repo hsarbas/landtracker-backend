@@ -22,6 +22,7 @@ from app.api.v1.tie_points import router as tie_points_router
 from app.api.v1.users import router as users_router
 # from app.api.v1.staticmap import router as map_router
 from app.api.v1.report_pdf import router as report_pdf_router
+from app.api.v1.properties import router as properties_router
 
 app = FastAPI(title=settings.app_name)
 configure_cors(app)
@@ -98,6 +99,7 @@ app.include_router(tie_points_router)
 app.include_router(users_router)
 # app.include_router(map_router)
 app.include_router(report_pdf_router)
+app.include_router(properties_router)
 
 
 # --- Optional request logging helpers ---
