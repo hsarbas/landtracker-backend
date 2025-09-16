@@ -212,12 +212,13 @@ async def generate_report_pdf(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
+
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
     page_w, page_h = A4
 
     y = _draw_header(c, page_w, page_h)
-    table = _make_summary_table(page_w, payload.title_id, payload.owner, payload.tech_desc)
+    table = _make_summary_table(page_w, payload.title_number, payload.owner, payload.tech_desc)
     avail_w = page_w - (2 * 28)
     _, table_h = table.wrapOn(c, avail_w, 0)
     reserved_for_summary = 16 + table_h + 10 + 10

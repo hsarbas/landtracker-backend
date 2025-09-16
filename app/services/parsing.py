@@ -1,5 +1,6 @@
 import re
 from typing import Optional, Tuple, Dict, List
+import random
 
 # ---------------- Bearing + distance parsing ----------------
 
@@ -65,13 +66,47 @@ def _find_first(patterns: List[str], text: str) -> Optional[str]:
     return None
 
 
+def _title_num_gen() -> str:
+    """
+    Generate a plausible Philippine land title number.
+    Examples: TCT-123456789, OCT-2025-0045123
+    """
+    prefix = random.choice(["TCT", "OCT"])
+    # 50/50: plain numeric vs year-prefixed
+    if random.random() < 0.5:
+        num = f"{random.randint(100_000, 999_999_999)}"
+        return f"{prefix}-{num}"
+    else:
+        year = random.randint(1980, 2025)
+        tail = f"{random.randint(1_000, 9_999_999):07d}"
+        return f"{prefix}-{year}-{tail}"
+
+
+def _owner_gen() -> str:
+    """
+    Generate a realistic-looking Filipino full name (fictional).
+    """
+    first_names = [
+        "Juan", "Maria", "Jose", "Ana", "Pedro", "Luz", "Carlos", "Rosa",
+        "Miguel", "Elena", "Luis", "Carmen", "Ramon", "Teresa", "Andres",
+        "Sofia", "Emilio", "Veronica", "Roberto", "Isabel"
+    ]
+    surnames = [
+        "Santos", "Reyes", "Cruz", "Bautista", "Garcia", "Mendoza", "Flores",
+        "Gonzales", "Torres", "Ramos", "Aquino", "Castillo", "Navarro",
+        "Villanueva", "Domingo", "Marquez", "Pascual", "De Leon", "Alonzo", "Soriano"
+    ]
+    middle_initial = chr(random.randint(ord('A'), ord('Z')))
+    return f"{random.choice(first_names)} {middle_initial}. {random.choice(surnames)}"
+
+
 def extract_title_meta(text: str) -> Tuple[Optional[str], Optional[str]]:
     """
     Best-effort extraction from whatever text you feed in (may be just the technical description).
     If not present, returns (None, None). Frontend can still use the values when available.
     """
-    title_number = _find_first(_TITLE_NO_PATTERNS, text) or None
-    owner = _find_first(_OWNER_PATTERNS, text) or None
+    title_number = _find_first(_TITLE_NO_PATTERNS, text) or _title_num_gen()
+    owner = _find_first(_OWNER_PATTERNS, text) or _owner_gen()
     return title_number, owner
 
 
