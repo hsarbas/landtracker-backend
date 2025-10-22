@@ -245,3 +245,13 @@ def purge_all_tie_points_orm(
 
     db.commit()
     return {"deleted": deleted, "total_before": total}
+
+
+# PURGE Tie points
+# curl -i -X DELETE "https://landtracker.ph/api/v1/tie-points/purge?confirm=true" \
+#   -H "Authorization: Bearer $TOKEN"
+
+# IMPORT Tie points
+# curl -i -X POST https://landtracker.ph/api/v1/tie-points/import \
+#   -H "Authorization: Bearer $TOKEN" \
+#   -F "file=@/Users/harveyarbas/Github/landtracker-backend/resources/tiepoints.json;type=application/json"

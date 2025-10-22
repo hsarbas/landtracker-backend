@@ -33,7 +33,7 @@ class Settings(BaseSettings):
 
     # --- Refresh cookie config ---
     refresh_cookie_name: str = Field("rt", alias="REFRESH_COOKIE_NAME")
-    refresh_cookie_path: str = Field("/api/v1/auth/refresh", alias="REFRESH_COOKIE_PATH")
+    refresh_cookie_path: str = Field("/v1/auth/refresh", alias="REFRESH_COOKIE_PATH")
     refresh_cookie_samesite: Literal["lax", "none", "strict"] = Field("lax", alias="REFRESH_COOKIE_SAMESITE")
     refresh_cookie_secure: bool = Field(False, alias="REFRESH_COOKIE_SECURE")
     refresh_cookie_httponly: bool = True  # always True

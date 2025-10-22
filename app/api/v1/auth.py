@@ -560,3 +560,10 @@ def logout(request: Request, response: Response, db: Session = Depends(get_db)):
 
     from app.schemas.user import LogoutResponse as LR
     return LR()
+
+
+# LOGIN FROM TERMINAL
+# TOKEN=$(curl -s -X POST https://landtracker.ph/api/v1/auth/login \
+#   -H "Content-Type: application/json" \
+#   -d '{"email":"admin@admin.com","password":"AdminPass123!"}' \
+#   | python -c 'import sys, json; print(json.load(sys.stdin)["access_token"])')
