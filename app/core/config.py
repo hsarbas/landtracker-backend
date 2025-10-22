@@ -57,14 +57,26 @@ class Settings(BaseSettings):
     db_port: int = Field(5433, alias="DB_PORT")
     db_name: str = Field("landtracker_db", alias="DB_NAME")
 
+    # --- SMTP / Email ---
+    smtp_host: str = Field("smtp-relay.brevo.com", alias="SMTP_HOST")
+    smtp_port: int = Field(587, alias="SMTP_PORT")
+    smtp_user: str = Field(..., alias="SMTP_USER")
+    smtp_password: str = Field(..., alias="SMTP_PASSWORD")
+    smtp_from_name: str = Field("LandTracker", alias="SMTP_FROM_NAME")
+    smtp_from_email: str = Field("no-reply@landtracker.ph", alias="SMTP_FROM_EMAIL")
+
+    app_frontend_url: str = Field("http://localhost:9000", alias="APP_FRONTEND_URL")
+    app_backend_url: str = Field("http://192.168.1.78:8000", alias="APP_BACKEND_URL")
+
     # --- CORS ---
     # Comma-separated in .env or leave default list
     allowed_origins: List[str] = [
         "http://localhost",
         "http://localhost:9000",
         "http://127.0.0.1:9000",
-        "http://192.168.1.7:9500",
-        "http://192.168.1.32:9500",
+        "http://192.168.1.78:9000",
+        "http://192.168.1.14:9000",
+        "http://192.168.1.78:9500",
         "capacitor://localhost",
         "ionic://localhost",
     ]
@@ -112,6 +124,17 @@ OTP_LENGTH = settings.otp_length
 OTP_TTL_MINUTES = settings.otp_ttl_minutes
 OTP_MAX_ATTEMPTS = settings.otp_max_attempts
 OTP_RESEND_COOLDOWN_SECONDS = settings.otp_resend_cooldown_seconds
+
+SMTP_HOST = settings.smtp_host
+SMTP_PORT = settings.smtp_port
+SMTP_USER = settings.smtp_user
+SMTP_PASSWORD = settings.smtp_password
+SMTP_FROM_NAME = settings.smtp_from_name
+SMTP_FROM_EMAIL = settings.smtp_from_email
+
+APP_FRONTEND_URL = settings.app_frontend_url
+APP_BACKEND_URL = settings.app_backend_url
+
 
 ALLOWED_ORIGINS = settings.allowed_origins  # used by CapacitorOriginFix/configure_cors
 

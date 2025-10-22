@@ -41,9 +41,10 @@ def parse_segment(seg: str) -> Tuple[Optional[Dict], Optional[float]]:
 
 # Try common PH title formats (TCT/OCT or long form)
 _TITLE_NO_PATTERNS = [
-    r'(?:TCT|OCT)\s*(?:No\.?|Number|#)?\s*[:\-]?\s*([A-Za-z0-9\-\/\. ]{3,})',
-    r'(?:Transfer\s+Certificate\s+of\s+Title|Original\s+Certificate\s+of\s+Title)\s*(?:No\.?|Number)?\s*[:\-]?\s*([A-Za-z0-9\-\/\. ]{3,})',
+    r'(?is)(?:Transfer|Original)\s+Certificate\s+of\s+Title[\s\S]{0,100}?\bNo\.?\s*[:\-]?\s*([A-Za-z0-9][A-Za-z0-9\-\/\. ]{2,})',
+    r'(?im)^\s*TCT\s*(?:No\.?|Number|#)?\s*[:\-]?\s*([A-Za-z0-9][A-Za-z0-9\-\/\. ]{2,})\s*$',
 ]
+
 
 _OWNER_PATTERNS = [
     r'(?:Registered\s+Owner|Owner)\s*[:\-]\s*([A-Z][A-Za-z\.\- ,]+)',
@@ -112,7 +113,7 @@ def extract_title_meta(text: str) -> Tuple[Optional[str], Optional[str]]:
 
 # ---------------- Main parser ----------------
 
-def parse_land_title(desc: str):
+def parse_land_title(text: str):
     """
     Parse the given technical description text.
     Returns: (title_number, owner, technical_description, tie_point, boundaries)
@@ -120,12 +121,12 @@ def parse_land_title(desc: str):
     - tie_point is parsed from the 'Beginning at ... from ...' segment
     - boundaries is a list of (bearing_dict, distance_m)
     """
-    if not isinstance(desc, str) or not desc.strip():
+    if not isinstance(text, str) or not text.strip():
         raise ValueError("Empty description")
 
     # Heuristic extraction for title_number/owner from the provided text (if present)
-    title_number, owner = extract_title_meta(desc)
-    technical_description = desc.strip()
+    title_number, owner = extract_title_meta(text)
+    technical_description = text.strip()
 
     # Find the "Beginning at ..." anchor
     anchor_phrases = [

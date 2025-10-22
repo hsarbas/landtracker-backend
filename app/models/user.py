@@ -17,8 +17,8 @@ class User(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    mobile: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
-    email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
+    mobile: Mapped[Optional[str]] = mapped_column(String(32), nullable=True, index=True)
+    email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     first_name = Column(String(100), nullable=True)
     last_name = Column(String(100), nullable=True)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)

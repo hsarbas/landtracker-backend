@@ -2,8 +2,8 @@ from pydantic import BaseModel
 from typing import List, Optional
 
 
-class DescriptionRequest(BaseModel):
-    description: str
+class TextRequest(BaseModel):
+    text: str
 
 
 class BoundaryPoint(BaseModel):

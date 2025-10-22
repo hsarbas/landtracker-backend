@@ -1,13 +1,13 @@
 from fastapi import APIRouter, HTTPException, Depends
-from app.schemas.parsing import DescriptionRequest, ParseResponse, BoundaryPoint
+from app.schemas.parsing import TextRequest, ParseResponse, BoundaryPoint
 from app.services.parsing import parse_land_title
 from app.core.deps import get_current_user
 
 router = APIRouter(prefix="/api/v1/parsing", tags=["Parsing"], dependencies=[Depends(get_current_user)])
 
 
-@router.post("/description", response_model=ParseResponse)
-async def parse_description(req: DescriptionRequest):
+@router.post("/text", response_model=ParseResponse)
+async def parse_description(req: TextRequest):
     """
     Parse a technical description text and return:
       - title_number (if found)
@@ -17,7 +17,7 @@ async def parse_description(req: DescriptionRequest):
       - boundaries[]
     """
     try:
-        title_number, owner, technical_description, tie_point, boundaries = parse_land_title(req.description)
+        title_number, owner, technical_description, tie_point, boundaries = parse_land_title(req.text)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

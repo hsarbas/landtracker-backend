@@ -134,54 +134,63 @@ def _draw_snapshot(c: canvas.Canvas, page_w: float, y: float, img_bytes: bytes, 
     return y - 10  # small gap after separator
 
 
-def _make_summary_table(page_w: float, title_id: str | None, owner: str | None, tech_desc: str | None):
+def _make_summary_table(page_w: float, title_id: str | None, owner: str | None, boundaries: list[dict] | None):
     margin = 28
     avail_w = page_w - (2 * margin)
-    label_col_w = 120
 
     styles = getSampleStyleSheet()
-    label_style = ParagraphStyle(
-        "label",
-        parent=styles["Normal"],
-        fontName="Helvetica-Bold",
-        fontSize=10,
-        leading=12,
-    )
-    value_style = ParagraphStyle(
-        "value",
-        parent=styles["Normal"],
-        fontName="Helvetica",
-        fontSize=10,
-        leading=13,
-        wordWrap="CJK",
-    )
+    label_style = ParagraphStyle("label", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=10)
+    value_style = ParagraphStyle("value", parent=styles["Normal"], fontName="Helvetica", fontSize=10, leading=13)
 
     def _p(txt: str | None, style: ParagraphStyle) -> Paragraph:
-        safe = escape(txt or "—").replace("\n", "<br/>")
-        return Paragraph(safe, style)
+        from xml.sax.saxutils import escape
+        return Paragraph(escape(txt or "—"), style)
 
-    data = [
+    # Header info
+    summary_data = [
         [Paragraph("Title ID", label_style), _p(title_id, value_style)],
         [Paragraph("Owner", label_style), _p(owner, value_style)],
-        [Paragraph("Technical Description", label_style), _p(tech_desc, value_style)],
     ]
 
-    table = Table(
-        data,
-        colWidths=[label_col_w, avail_w - label_col_w],
-        hAlign="LEFT",
-    )
-    table.setStyle(TableStyle([
+    # Boundaries section
+    boundary_rows = [
+        [Paragraph("<b>NS</b>", label_style),
+         Paragraph("<b>Deg</b>", label_style),
+         Paragraph("<b>Min</b>", label_style),
+         Paragraph("<b>EW</b>", label_style),
+         Paragraph("<b>Distance (m)</b>", label_style)]
+    ]
+
+    if boundaries:
+        for b in boundaries:
+            boundary_rows.append([
+                _p(b.get("ns"), value_style),
+                _p(str(b.get("deg")), value_style),
+                _p(str(b.get("min")), value_style),
+                _p(b.get("ew"), value_style),
+                _p(f"{b.get('distance'):.2f}", value_style),
+            ])
+    else:
+        boundary_rows.append(["—"] * 5)
+
+    # Combine summary and boundary tables visually stacked
+    summary_table = Table(summary_data, colWidths=[100, avail_w - 100], hAlign="LEFT")
+    summary_table.setStyle(TableStyle([
         ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#B0B0B0")),
         ("BACKGROUND", (0, 0), (0, -1), colors.lightblue),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 8),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-        ("TOPPADDING", (0, 0), (-1, -1), 6),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
     ]))
 
-    return table
+    boundaries_table = Table(boundary_rows, colWidths=[60, 60, 60, 60, avail_w - 240])
+    boundaries_table.setStyle(TableStyle([
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#B0B0B0")),
+        ("BACKGROUND", (0, 0), (-1, 0), colors.lightblue),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+    ]))
+
+    return summary_table, boundaries_table
 
 
 def _draw_summary_table(c: canvas.Canvas, page_w: float, y: float, table: Table) -> float:
@@ -208,45 +217,87 @@ def _draw_summary_table(c: canvas.Canvas, page_w: float, y: float, table: Table)
 @router.post("", response_class=StreamingResponse, summary="Generate Land Tracker PDF (server-side)")
 async def generate_report_pdf(
     payload: ReportData,
-    property_id: int | None = None,                   # <-- pass this to persist under a property
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-
+    """
+    Builds a one-page PDF:
+      - Header (logo + title + timestamp)
+      - Optional snapshot (Google Static Maps)
+      - Summary table (Title ID, Owner)
+      - Boundaries table (NS, Deg, Min, EW, Distance)
+    Saves a copy under REPORTS_DIR/<user.id>/... and records a PropertyReport row.
+    Streams the PDF back to the client.
+    """
+    # ---- Build PDF in-memory ----
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
     page_w, page_h = A4
 
+    # Header
     y = _draw_header(c, page_w, page_h)
-    table = _make_summary_table(page_w, payload.title_number, payload.owner, payload.tech_desc)
-    avail_w = page_w - (2 * 28)
-    _, table_h = table.wrapOn(c, avail_w, 0)
-    reserved_for_summary = 16 + table_h + 10 + 10
 
+    # Tables (summary + boundaries)
+    summary_table, boundaries_table = _make_summary_table(
+        page_w,
+        payload.title_number,
+        payload.owner,
+        [b.dict() if hasattr(b, "dict") else b for b in (payload.boundaries or [])],
+    )
+
+    # Compute reserved space below the snapshot so it doesn't overlap tables
+    avail_w = page_w - (2 * 28)
+    _, summary_h = summary_table.wrapOn(c, avail_w, 0)
+    _, boundaries_h = boundaries_table.wrapOn(c, avail_w, 0)
+
+    # Rough layout gaps/paddings (mirrors helpers)
+    #  - 16 for summary heading spacing inside _draw_summary_table
+    #  - +10 after summary table (inside _draw_summary_table)
+    #  - +18 for "Boundaries" heading
+    #  - +10 after boundaries table
+    #  - +10 extra breathing room
+    reserved_for_sections = 16 + summary_h + 10 + 18 + boundaries_h + 10 + 10
+
+    # Optional snapshot (above tables)
     c.setFont("Helvetica-Bold", 12)
     y -= 15
-
     if payload.snapshot:
         try:
             img_bytes = await _fetch_image_bytes(str(payload.snapshot))
-            y = _draw_snapshot(c, page_w, y, img_bytes, reserve_below=reserved_for_summary)
+            y = _draw_snapshot(c, page_w, y, img_bytes, reserve_below=reserved_for_sections)
         except Exception:
             c.setFont("Helvetica", 9)
             c.drawString(40, y, "Snapshot could not be embedded.")
             y -= 14
 
-    y = _draw_summary_table(c, page_w, y, table)
+    # Draw summary table (Title ID, Owner)
+    y = _draw_summary_table(c, page_w, y, summary_table)
+
+    # Draw "Boundaries" section
+    margin_left = 28
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(margin_left, y, "Boundaries")
+    y -= 18
+
+    _, bh = boundaries_table.wrapOn(c, avail_w, y)
+    boundaries_table.drawOn(c, margin_left, y - bh)
+    y -= bh + 10
+
+    # Footer (page number)
     c.setFont("Helvetica", 8)
     c.drawRightString(page_w - 28, 18, "Page 1")
+
     c.showPage()
     c.save()
 
+    # ---- Persist & respond ----
     buf.seek(0)
     pdf_bytes = buf.getvalue()
 
     saved_path = None
+    property_id = payload.property_id
     if property_id is not None:
-        # Optional: verify the property belongs to the current user
+        # Verify property ownership
         prop = db.get(Property, property_id)
         if not prop or prop.user_id != user.id:
             raise HTTPException(status_code=403, detail="Not your property")
@@ -264,12 +315,12 @@ async def generate_report_pdf(
         db.add(PropertyReport(property_id=property_id, file_path=saved_path, report_type="pdf"))
         db.commit()
 
-    # Stream back (and expose where it was saved if applicable)
     return StreamingResponse(
         io.BytesIO(pdf_bytes),
         media_type="application/pdf",
         headers={
-            "Content-Disposition": f'inline; filename="LandTracker_Report.pdf"',
+            "Content-Disposition": 'inline; filename="LandTracker_Report.pdf"',
             "X-Report-Path": saved_path or "",
         },
     )
+

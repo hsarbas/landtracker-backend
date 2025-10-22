@@ -1,92 +1,66 @@
 from __future__ import annotations
 from datetime import datetime
-from typing import Optional, List
-
-from pydantic import BaseModel, Field
-
-
-# ---------- Boundaries ----------
-class BoundaryIn(BaseModel):
-    idx: int = Field(..., ge=1)
-    bearing: Optional[str] = None
-    distance_m: Optional[float] = None
-    start_lat: Optional[float] = None
-    start_lng: Optional[float] = None
-    end_lat: Optional[float] = None
-    end_lng: Optional[float] = None
-    raw_text: Optional[str] = None
+from typing import List
+from pydantic import BaseModel
 
 
-class BoundaryOut(BoundaryIn):
+# --- Shared read-only pieces (show up in outputs) ---
+class BoundaryOut(BaseModel):
     id: int
+    bearing: str
+    distance_m: float
 
 
-# ---------- Images ----------
-class PropertyImageOut(BaseModel):
+class ImageOut(BaseModel):
     id: int
     file_path: str
-    original_name: str
     order_index: int
-    page_number: int
+    created_at: datetime
 
 
-# ---------- Reports ----------
-class PropertyReportOut(BaseModel):
+class ReportOut(BaseModel):
     id: int
     report_type: str
     file_path: str
     created_at: datetime
 
 
-# ---------- Create/Update ----------
+# --- Input pieces (what the client sends) ---
+class BoundaryCreate(BaseModel):
+    bearing: str
+    distance_m: float
+
+
+class TitleImageCreate(BaseModel):
+    data_url: str
+    order_index: int
+
+
+class ReportCreate(BaseModel):
+    report_type: str
+    data_url: str  # must be PDF
+
+
+# --- Property models ---
 class PropertyCreate(BaseModel):
-    # OCR metadata
-    title_number: Optional[str] = None
-    owner: Optional[str] = None
-    technical_description: Optional[str] = None
-    ocr_raw: Optional[dict] = None
-
-    # tie point (either link or provide fields)
-    tie_point_id: Optional[int] = None
-    tie_point_province: Optional[str] = None
-    tie_point_municipality: Optional[str] = None
-    tie_point_name: Optional[str] = None
-
-    # boundaries:
-    boundaries: List[BoundaryIn] = []
+    user_id: int
+    title_number: str
+    owner: str
+    technical_description: str
+    tie_point_id: int
 
 
-class PropertyUpdate(BaseModel):
-    title_number: Optional[str] = None
-    owner: Optional[str] = None
-    technical_description: Optional[str] = None
-    ocr_raw: Optional[dict] = None
-    tie_point_id: Optional[int] = None
-    tie_point_province: Optional[str] = None
-    tie_point_municipality: Optional[str] = None
-    tie_point_name: Optional[str] = None
-    boundaries: Optional[List[BoundaryIn]] = None  # replace-all semantics
-
-
-# ---------- Output ----------
 class PropertyOut(BaseModel):
     id: int
     user_id: int
+    title_number: str
+    owner: str
+    technical_description: str
+    tie_point_id: int
 
-    title_number: Optional[str]
-    owner: Optional[str]
-    technical_description: Optional[str]
-    ocr_raw: Optional[dict]
-
-    tie_point_id: Optional[int]
-    tie_point_province: Optional[str]
-    tie_point_municipality: Optional[str]
-    tie_point_name: Optional[str]
-
-    is_archived: bool
     created_at: datetime
     updated_at: datetime
 
-    images: List[PropertyImageOut] = []
+    images: List[ImageOut] = []
     boundaries: List[BoundaryOut] = []
-    reports: List[PropertyReportOut] = []
+    reports: List[ReportOut] = []

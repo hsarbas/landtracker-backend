@@ -6,12 +6,17 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from jose import jwt, JWTError
 from passlib.context import CryptContext
+from fastapi.responses import RedirectResponse
 
-from app.schemas.user import UserCreate, UserLogin, UserRead, TokenPair, LogoutResponse, normalize_ph_mobile
+from app.schemas.user import (
+    UserCreate, UserLogin, UserRead, TokenPair, LogoutResponse,
+    EmailVerifyRequest, EmailVerifyConfirm, normalize_ph_mobile
+)
 from app.schemas.otp import OtpRequest, OtpConfirm, OtpStatus
 from app.models.user import User
 from app.models.role import Role
 from app.models.refresh_token import RefreshToken
+from app.models.email_verify_token import EmailVerifyToken
 from app.models.otp_code import OtpCode, OtpPurpose
 from app.core.security import (
     hash_password, verify_password, create_access_token, create_refresh_token, TokenPayload
@@ -21,15 +26,54 @@ from app.core.config import (
     SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES,
     REFRESH_COOKIE_NAME, REFRESH_COOKIE_PATH, REFRESH_COOKIE_SAMESITE,
     REFRESH_COOKIE_SECURE, REFRESH_COOKIE_HTTPONLY,
-    OTP_LENGTH, OTP_TTL_MINUTES, OTP_MAX_ATTEMPTS, OTP_RESEND_COOLDOWN_SECONDS
+    OTP_LENGTH, OTP_TTL_MINUTES, OTP_MAX_ATTEMPTS, OTP_RESEND_COOLDOWN_SECONDS, APP_FRONTEND_URL, APP_BACKEND_URL
 )
 from app.services.sms import send_sms
+from app.services.email import send_email
+from app.services.email_templates import build_verification_email
+
 from app.db.session import get_db
 
 from app.schemas.otp import MobileChangeRequest, MobileChangeConfirm
 
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
+
+EMAIL_TOKEN_TTL_MINUTES = 60 * 24
+
+
+def _gen_email_token() -> str:
+    # short opaque token (url-safe)
+    return secrets.token_urlsafe(32)
+
+
+def _create_email_verify_token(db: Session, user: User) -> EmailVerifyToken:
+    # Invalidate previous, unused tokens
+    db.query(EmailVerifyToken).filter(
+        EmailVerifyToken.user_id == user.id,
+        EmailVerifyToken.is_used == False
+    ).update({EmailVerifyToken.is_used: True})
+
+    token = _gen_email_token()
+    row = EmailVerifyToken(
+        user_id=user.id,
+        token=token,
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=EMAIL_TOKEN_TTL_MINUTES),
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def _send_verification_email(user, token: str):
+    verify_link = f"{APP_BACKEND_URL}/api/v1/auth/verify/email?token={token}"
+    html = build_verification_email(user.email, verify_link)
+    send_email(
+        to=user.email,
+        subject="Verify your Land Tracker account",
+        html=html
+    )
 
 
 # ----------------- Cookie helpers -----------------
@@ -159,30 +203,71 @@ def _user_role_name(user: User) -> str:
 # ----------------- Endpoints -----------------
 @router.post("/register", response_model=UserRead, status_code=201)
 def register(payload: UserCreate, db: Session = Depends(get_db)):
-    mobile = normalize_ph_mobile(payload.mobile)
+    # Enforce unique email manually for clearer error (DB also enforces)
+    if db.query(User).filter(User.email == payload.email).first():
+        raise HTTPException(status_code=400, detail="Email already registered")
 
-    # ★ default to 'client' role via FK
+    mobile_norm = normalize_ph_mobile(payload.mobile) if payload.mobile else None
+    if mobile_norm and db.query(User).filter(User.mobile == mobile_norm).first():
+        raise HTTPException(status_code=400, detail="Mobile already registered")
+
     role = _get_role_or_bootstrap(db, "client")
-
     user = User(
-        mobile=mobile,
+        email=payload.email,
+        mobile=mobile_norm,
         hashed_password=hash_password(payload.password),
         first_name=payload.first_name,
         last_name=payload.last_name,
-        role_id=role.id,  # ★ FK instead of enum
+        role_id=role.id,
         is_verified=False,
-        email=payload.email,
     )
     db.add(user)
-    try:
-        db.commit()
-        db.refresh(user)
-    except IntegrityError as e:
-        db.rollback()
-        raise HTTPException(status_code=400, detail="Mobile already registered")
+    db.commit()
+    db.refresh(user)
 
-    _create_or_replace_otp(db, user)
+    tok = _create_email_verify_token(db, user)
+    _send_verification_email(user, tok.token)
     return user
+
+
+# ---------- RESEND verification email ----------
+@router.post("/verify/email/request", response_model=OtpStatus)  # reuse your OtpStatus(ok,message)
+def email_verify_request(body: EmailVerifyRequest, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.email == body.email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if user.is_verified:
+        return OtpStatus(ok=True, message="Already verified")
+
+    tok = _create_email_verify_token(db, user)
+    _send_verification_email(user, tok.token)
+    return OtpStatus(ok=True, message="Verification email sent")
+
+
+# ---------- One-click VERIFY endpoint (clicked from email) ----------
+@router.get("/verify/email")
+def email_verify_confirm(token: str, db: Session = Depends(get_db)):
+    row = db.query(EmailVerifyToken).filter(EmailVerifyToken.token == token).first()
+    if not row or row.is_used:
+        raise HTTPException(status_code=400, detail="Invalid or used token")
+
+    now = datetime.now(timezone.utc)
+    if now > row.expires_at:
+        row.is_used = True
+        db.commit()
+        raise HTTPException(status_code=400, detail="Token expired")
+
+    user = row.user
+    user.is_verified = True
+    user.verified_at = now
+    row.is_used = True
+    row.used_at = now
+    db.commit()
+
+    web_fallback = f"{APP_FRONTEND_URL}/auth/verify-success?email={user.email}"
+
+    return RedirectResponse(url=web_fallback, status_code=302)
+
 
 
 @router.post("/verify/request", response_model=OtpStatus)
@@ -343,23 +428,21 @@ def confirm_change_mobile(
 @router.post("/login", response_model=TokenPair)
 def login(payload: UserLogin, response: Response, request: Request, db: Session = Depends(get_db)):
     print(payload)
-    mobile = normalize_ph_mobile(payload.mobile)
-    user = db.query(User).filter(User.mobile == mobile).first()
+    email = payload.email
+    user = db.query(User).filter(User.email == email).first()
     if not user or not verify_password(payload.password, user.hashed_password):
-        raise HTTPException(status_code=401, detail="Incorrect mobile or password")
+        raise HTTPException(status_code=401, detail="Incorrect email or password")
 
     if not user.is_verified:
-        _issue_otp_respecting_cooldown(db, user)
+        # issue (or rotate) email token and tell client to check email
+        tok = _create_email_verify_token(db, user)
+        _send_verification_email(user, tok.token)
         raise HTTPException(
             status_code=403,
             detail={
-                "code": "VERIFICATION_REQUIRED",
-                "message": "Mobile not verified. We sent an OTP to your number.",
-                "next": {
-                    "endpoint": "/api/v1/auth/verify/confirm",
-                    "method": "POST",
-                    "body": {"mobile": payload.mobile, "code": "<6-digit-otp>"},
-                },
+                "code": "EMAIL_VERIFICATION_REQUIRED",
+                "message": "Email not verified. We sent you a verification link.",
+                "next": {"endpoint": "/api/v1/auth/verify/email?token=<token-from-email>", "method": "GET"},
             },
         )
 

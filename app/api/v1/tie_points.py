@@ -181,6 +181,7 @@ def get_by_description(
 ):
     q = db.query(TiePoint)
 
+    print(f'======== {province}, {municipality}, {description}')
     # province
     if province is None:
         q = q.filter(TiePoint.province.is_(None))
@@ -205,8 +206,10 @@ def get_by_description(
     return row
 
 
-@router.get("/{name}", response_model=TiePointRead)
-def get_tie_point(name: str, db: Session = Depends(get_db)):
-    tp = db.query(TiePoint).filter(TiePoint.tie_point_name == name).first()
-    if not tp: raise HTTPException(404, f"Tie point '{name}' not found.")
+@router.get("/{tie_point_id}", response_model=TiePointRead)
+def get_tie_point_by_id(tie_point_id: int, db: Session = Depends(get_db)):
+    tp = db.get(TiePoint, tie_point_id)
+    if not tp:
+        raise HTTPException(status_code=404, detail=f"Tie point with id {tie_point_id} not found.")
     return tp
+

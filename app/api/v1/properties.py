@@ -1,75 +1,108 @@
 from __future__ import annotations
 import os
+import re
 import uuid
-import json
-from typing import List, Optional
+import base64
+from typing import List
 
-from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session, selectinload, joinedload
-from sqlalchemy import select, delete
+
 from app.core.config import settings
 from app.core.deps import get_current_user
 from app.db.session import get_db
+
 from app.models.property import Property
 from app.models.property_image import PropertyImage
 from app.models.property_boundary import PropertyBoundary
-from app.schemas.property import PropertyCreate, PropertyUpdate, PropertyOut
+from app.models.property_report import PropertyReport  # ensure this model file exists
 
-# Where to save uploads (adjust to your liking / settings.py)
-TITLE_IMG_DIR = settings.title_img_dir
+from app.schemas.property import (
+    PropertyCreate, PropertyOut,
+    TitleImageCreate, BoundaryCreate, ReportCreate, ReportOut
+)
 
-router = APIRouter(prefix="/api/v1/properties", tags=["properties"], dependencies=[Depends(get_current_user)])
+router = APIRouter(
+    prefix="/api/v1/properties",
+    tags=["properties"],
+    dependencies=[Depends(get_current_user)],
+)
+
+# --- Directories from settings ---
+TITLE_IMG_DIR = settings.title_img_dir               # e.g., /data/uploads/properties
+REPORT_DIR = getattr(settings, "report_dir", None) or os.path.join(os.path.dirname(TITLE_IMG_DIR), "reports")
+
+# --- Helpers ---
+DATA_URL_RE = re.compile(r"^data:(?P<mime>[\w\-\./\+]+);base64,(?P<b64>.+)$", re.I)
 
 
-def _ensure_dirs():
-    os.makedirs(TITLE_IMG_DIR, exist_ok=True)
+def _ensure_dir(path: str) -> None:
+    os.makedirs(path, exist_ok=True)
 
 
-def _save_upload(file: UploadFile, subdir: str = "") -> str:
-    _ensure_dirs()
-    stem = str(uuid.uuid4())
-    base, ext = os.path.splitext(file.filename or "")
-    fname = f"{stem}{ext or ''}"
-    dir_path = os.path.join(TITLE_IMG_DIR, subdir) if subdir else TITLE_IMG_DIR
-    os.makedirs(dir_path, exist_ok=True)
-    fpath = os.path.join(dir_path, fname)
-    with open(fpath, "wb") as out:
-        out.write(file.file.read())
+def _save_data_url_strict(data_url: str, base_dir: str, subdir: str, *, allowed_mimes: set[str], filename_hint: str | None = None) -> str:
+    m = DATA_URL_RE.match(data_url or "")
+    if not m:
+        raise HTTPException(status_code=422, detail="Invalid data URL")
+    mime = (m.group("mime") or "").lower()
+    if mime not in {x.lower() for x in allowed_mimes}:
+        raise HTTPException(status_code=422, detail=f"Unsupported MIME type: {mime}")
+    try:
+        blob = base64.b64decode(m.group("b64"))
+    except Exception:
+        raise HTTPException(status_code=422, detail="Invalid base64 payload")
+
+    ext_map = {
+        "image/png": ".png",
+        "image/jpeg": ".jpg",
+        "image/jpg": ".jpg",
+        "image/webp": ".webp",
+        "application/pdf": ".pdf",
+    }
+    ext = ext_map.get(mime, ".bin")
+
+    folder = os.path.join(base_dir, subdir) if subdir else base_dir
+    _ensure_dir(folder)
+    fname = (filename_hint if filename_hint else f"{uuid.uuid4().hex}{ext}")
+    fpath = os.path.join(folder, fname)
+    with open(fpath, "wb") as fh:
+        fh.write(blob)
     return fpath
 
 
 def _load_full_property(db: Session, prop_id: int) -> Property:
-    stmt = (
-        select(Property)
-        .where(Property.id == prop_id)
-        .options(
+    prop = db.get(
+        Property,
+        prop_id,
+        options=(
             selectinload(Property.images),
             selectinload(Property.boundaries),
             selectinload(Property.reports),
             joinedload(Property.tie_point),
-        )
+        ),
     )
-    prop = db.execute(stmt).scalars().first()
     if not prop:
         raise HTTPException(status_code=404, detail="Property not found")
     return prop
 
 
+# --- Endpoints ---
+
 @router.get("/my", response_model=list[PropertyOut])
 def list_my_properties(db: Session = Depends(get_db), user=Depends(get_current_user)):
-    stmt = (
-        select(Property)
-        .where(Property.user_id == user.id, Property.is_archived == False)  # noqa: E712
+    return (
+        db.query(Property)
         .options(
             selectinload(Property.images),
             selectinload(Property.boundaries),
             selectinload(Property.reports),
             joinedload(Property.tie_point),
         )
+        .filter(Property.user_id == user.id)
         .order_by(Property.created_at.desc())
+        .all()
     )
-    props = db.execute(stmt).scalars().all()
-    return props
 
 
 @router.get("/{property_id}", response_model=PropertyOut)
@@ -80,132 +113,162 @@ def get_property(property_id: int, db: Session = Depends(get_db), user=Depends(g
     return prop
 
 
-# Accept multipart form with (A) JSON payload + (B) zero/one/many files
 @router.post("", response_model=PropertyOut)
 async def create_property(
-    payload: str = Form(..., description="JSON string for PropertyCreate"),
-    title_image: Optional[UploadFile] = File(None, description="(legacy) single image"),
-    title_images: Optional[List[UploadFile]] = File(None, description="one or many images"),
+    payload: PropertyCreate,
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    try:
-        data = PropertyCreate.model_validate_json(payload)
-    except Exception:
-        # fallback for old clients sending raw JSON string without quotes escaping
-        data = PropertyCreate(**json.loads(payload))
+    # Security: only allow creating for self (adjust if you support admins)
+    if payload.user_id != user.id:
+        raise HTTPException(status_code=403, detail="Cannot create property for another user")
 
     prop = Property(
-        user_id=user.id,
-        title_number=data.title_number,
-        owner=data.owner,
-        technical_description=data.technical_description,
-        ocr_raw=data.ocr_raw,
-        tie_point_id=data.tie_point_id,
-        tie_point_province=data.tie_point_province,
-        tie_point_municipality=data.tie_point_municipality,
-        tie_point_name=data.tie_point_name,
+        user_id=payload.user_id,
+        title_number=payload.title_number,
+        owner=payload.owner,
+        technical_description=payload.technical_description,
+        tie_point_id=payload.tie_point_id,
     )
     db.add(prop)
-    db.flush()  # so we have prop.id
-
-    # Boundaries
-    for b in data.boundaries:
-        db.add(
-            PropertyBoundary(
-                property_id=prop.id,
-                idx=b.idx,
-                bearing=b.bearing,
-                distance_m=b.distance_m,
-                start_lat=b.start_lat,
-                start_lng=b.start_lng,
-                end_lat=b.end_lat,
-                end_lng=b.end_lng,
-                raw_text=b.raw_text,
-            )
-        )
-
-    # Images: support both the single `title_image` and the future `title_images`
-    files: List[UploadFile] = []
-    if title_images:
-        files.extend(title_images)
-    if title_image:
-        files.append(title_image)
-
-    for i, f in enumerate(files):
-        if not f:
-            continue
-        fpath = _save_upload(f, subdir=str(user.id))
-        db.add(
-            PropertyImage(
-                property_id=prop.id,
-                file_path=fpath,
-                original_name=f.filename or "",
-                order_index=i,
-                page_number=1,
-            )
-        )
-
     db.commit()
+    db.refresh(prop)
     return _load_full_property(db, prop.id)
 
 
-@router.patch("/{property_id}", response_model=PropertyOut)
-async def update_property(
+@router.put("/{property_id}/boundaries", response_model=PropertyOut)
+async def replace_boundaries(
     property_id: int,
-    payload: str = Form(..., description="JSON string for PropertyUpdate"),
-    # optionally append more images
-    title_images: Optional[List[UploadFile]] = File(None),
+    boundaries: List[BoundaryCreate],
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    prop = db.get(Property, property_id)
-    if not prop or prop.user_id != user.id:
-        raise HTTPException(status_code=404, detail="Property not found")
+    prop = _load_full_property(db, property_id)
+    if prop.user_id != user.id:
+        raise HTTPException(status_code=403, detail="Not your property")
 
-    try:
-        data = PropertyUpdate.model_validate_json(payload)
-    except Exception:
-        data = PropertyUpdate(**json.loads(payload))
+    # Replace-all semantics
+    # Clear existing
+    for b in list(prop.boundaries):
+        db.delete(b)
+    db.flush()
 
-    for field, value in data.model_dump(exclude_unset=True).items():
-        if field != "boundaries":
-            setattr(prop, field, value)
-
-    # Replace-all semantics for boundaries if provided
-    if data.boundaries is not None:
-        db.execute(delete(PropertyBoundary).where(PropertyBoundary.property_id == prop.id))
-        for b in data.boundaries:
-            db.add(
-                PropertyBoundary(
-                    property_id=prop.id,
-                    idx=b.idx,
-                    bearing=b.bearing,
-                    distance_m=b.distance_m,
-                    start_lat=b.start_lat,
-                    start_lng=b.start_lng,
-                    end_lat=b.end_lat,
-                    end_lng=b.end_lng,
-                    raw_text=b.raw_text,
-                )
-            )
-
-    # New images (append)
-    if title_images:
-        start = len(prop.images)
-        for i, f in enumerate(title_images):
-            if not f:
-                continue
-            fpath = _save_upload(f, subdir=str(user.id))
-            db.add(
-                PropertyImage(
-                    property_id=prop.id,
-                    file_path=fpath,
-                    original_name=f.filename or "",
-                    order_index=start + i,
-                    page_number=1,
-                )
-            )
+    # Insert new
+    for b in boundaries or []:
+        db.add(PropertyBoundary(
+            property_id=prop.id,
+            bearing=b.bearing,
+            distance_m=b.distance_m,
+        ))
 
     db.commit()
     return _load_full_property(db, prop.id)
+
+
+@router.post("/{property_id}/images", response_model=PropertyOut)
+async def add_images(
+    property_id: int,
+    images: List[TitleImageCreate],
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    prop = _load_full_property(db, property_id)
+    if prop.user_id != user.id:
+        raise HTTPException(status_code=403, detail="Not your property")
+
+    # Reject PDFs; allow image/* only
+    allowed = {"image/png", "image/jpeg", "image/jpg", "image/webp"}
+    for img in images or []:
+        # Save file
+        saved_path = _save_data_url_strict(
+            img.data_url,
+            base_dir=TITLE_IMG_DIR,
+            subdir=str(user.id),
+            allowed_mimes=allowed,
+            filename_hint=None,  # derive from MIME; you can pass a client filename if you add it later
+        )
+        # Store DB row
+        db.add(PropertyImage(
+            property_id=prop.id,
+            file_path=saved_path,
+            order_index=img.order_index,
+        ))
+
+    db.commit()
+    return _load_full_property(db, prop.id)
+
+
+@router.post("/{property_id}/reports", response_model=PropertyOut)
+async def add_reports(
+    property_id: int,
+    reports: List[ReportCreate],
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    prop = _load_full_property(db, property_id)
+    if prop.user_id != user.id:
+        raise HTTPException(status_code=403, detail="Not your property")
+
+    # PDFs only
+    allowed = {"application/pdf"}
+    for rpt in reports or []:
+        saved_path = _save_data_url_strict(
+            rpt.data_url,
+            base_dir=REPORT_DIR,
+            subdir=str(user.id),
+            allowed_mimes=allowed,
+            filename_hint=None,  # can accept a filename in schema later if desired
+        )
+        db.add(PropertyReport(
+            property_id=prop.id,
+            report_type=rpt.report_type,
+            file_path=saved_path,
+        ))
+
+    db.commit()
+    return _load_full_property(db, prop.id)
+
+
+@router.get("/{property_id}/reports", response_model=List[ReportOut])
+def list_property_reports(property_id: int, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    prop = _load_full_property(db, property_id)
+    if prop.user_id != user.id:
+        raise HTTPException(status_code=403, detail="Not your property")
+    return sorted(prop.reports, key=lambda r: (r.created_at, r.id), reverse=True)
+
+
+@router.get("/{property_id}/reports/{report_id}/download")
+def download_report(
+    property_id: int,
+    report_id: int,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    # Verify property ownership
+    prop = db.get(Property, property_id)
+    if not prop:
+        raise HTTPException(status_code=404, detail="Property not found")
+    if prop.user_id != user.id:
+        raise HTTPException(status_code=403, detail="Not your property")
+
+    rpt = (
+        db.query(PropertyReport)
+        .filter(
+            PropertyReport.id == report_id,
+            PropertyReport.property_id == property_id,
+        )
+        .first()
+    )
+    if not rpt:
+        raise HTTPException(status_code=404, detail="Report not found")
+
+    fpath = rpt.file_path
+    if not fpath or not os.path.exists(fpath):
+        raise HTTPException(status_code=404, detail="Report file missing")
+
+    # Let browser display inline, but still downloadable
+    return FileResponse(
+        path=fpath,
+        media_type="application/pdf",
+        filename=os.path.basename(fpath),
+    )

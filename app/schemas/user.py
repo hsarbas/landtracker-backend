@@ -25,29 +25,28 @@ def normalize_ph_mobile(msisdn: str) -> str:
 
 
 class UserCreate(BaseModel):
-    mobile: str = Field(min_length=7, max_length=32)
+    email: EmailStr
     password: str = Field(min_length=8)
+    mobile: Optional[str] = Field(default=None)
     first_name: Optional[str]
     last_name: Optional[str]
-    email: Optional[EmailStr]
-    # optional: let backend default to "client" if not provided
     role_id: Optional[int] = None
 
 
 class UserLogin(BaseModel):
-    mobile: str
+    email: EmailStr
     password: str
 
 
 class UserRead(BaseModel):
     id: int
-    mobile: str
-    email: Optional[EmailStr] = None
+    mobile: Optional[str] = None
+    email: EmailStr
     first_name: Optional[str]
     last_name: Optional[str]
     is_active: bool
     created_at: datetime
-    role: RoleRead  # embed the role object
+    role: RoleRead
 
     class Config:
         from_attributes = True
@@ -57,6 +56,14 @@ class UserUpdate(BaseModel):
     first_name: Optional[str] = Field(None, max_length=100)
     last_name: Optional[str] = Field(None, max_length=100)
     email: Optional[EmailStr] = None  # user can add/change later
+
+
+class EmailVerifyRequest(BaseModel):
+    email: EmailStr
+
+
+class EmailVerifyConfirm(BaseModel):
+    token: str
 
 
 class PasswordChange(BaseModel):
