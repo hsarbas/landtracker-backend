@@ -213,3 +213,35 @@ def get_tie_point_by_id(tie_point_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail=f"Tie point with id {tie_point_id} not found.")
     return tp
 
+
+@router.delete("/purge", summary="Delete ALL tie points (ORM, per-instance)")
+def purge_all_tie_points_orm(
+    confirm: bool = Query(False, description="Must be true to proceed"),
+    chunk_size: int = Query(1000, ge=1, le=10000, description="Delete in batches to reduce memory"),
+    db: Session = Depends(get_db),
+):
+    """
+    Deletes **all** TiePoint rows using ORM per-instance deletes.
+
+    Notes:
+    - Runs mapper-level cascades and events for each instance.
+    - Uses `yield_per(chunk_size)` to keep memory usage reasonable.
+    - Does **not** reset the primary key/sequence (keeps things DB-agnostic).
+    """
+    if not confirm:
+        raise HTTPException(status_code=400, detail="Set confirm=true to purge all tie points.")
+
+    total = db.query(TiePoint).count()
+    if total == 0:
+        return {"deleted": 0, "total_before": 0}
+
+    deleted = 0
+    # Stream rows; per-instance delete to trigger ORM cascades
+    for tp in db.query(TiePoint).yield_per(chunk_size):
+        db.delete(tp)
+        deleted += 1
+        if deleted % chunk_size == 0:
+            db.flush()  # push batched deletes
+
+    db.commit()
+    return {"deleted": deleted, "total_before": total}
