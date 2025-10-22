@@ -65,8 +65,8 @@ class Settings(BaseSettings):
     smtp_from_name: str = Field("LandTracker", alias="SMTP_FROM_NAME")
     smtp_from_email: str = Field("no-reply@landtracker.ph", alias="SMTP_FROM_EMAIL")
 
-    app_frontend_url: str = Field("http://localhost:9000", alias="APP_FRONTEND_URL")
-    app_backend_url: str = Field("http://192.168.1.78:8000", alias="APP_BACKEND_URL")
+    app_frontend_url: str = Field("https://landtracker.ph", alias="APP_FRONTEND_URL")
+    app_backend_url: str = Field("https://landtracker.ph/app", alias="APP_BACKEND_URL")
 
     # --- CORS ---
     # Comma-separated in .env or leave default list
@@ -77,6 +77,7 @@ class Settings(BaseSettings):
         "http://192.168.1.78:9000",
         "http://192.168.1.14:9000",
         "http://192.168.1.78:9500",
+        "https://landtracker.ph",
         "capacitor://localhost",
         "ionic://localhost",
     ]
