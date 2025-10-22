@@ -24,7 +24,14 @@ from app.api.v1.users import router as users_router
 from app.api.v1.report_pdf import router as report_pdf_router
 from app.api.v1.properties import router as properties_router
 
-app = FastAPI(title=settings.app_name)
+app = FastAPI(
+    title=settings.app_name,
+    version="0.1.0",
+    root_path="/app",
+    docs_url="/docs",
+    openapi_url="/openapi.json"
+)
+
 configure_cors(app)
 app.add_middleware(CapacitorOriginFix)
 
