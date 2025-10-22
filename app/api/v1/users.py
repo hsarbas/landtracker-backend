@@ -7,7 +7,7 @@ from app.models.role import Role
 from app.schemas.user import UserRead, UserUpdate, PasswordChange, SetRoleRequest
 from app.core.security import verify_password, hash_password
 
-router = APIRouter(prefix="/api/v1/users", tags=["users"], dependencies=[Depends(get_current_user)])
+router = APIRouter(prefix="/v1/users", tags=["users"], dependencies=[Depends(get_current_user)])
 
 
 def require_admin(user: User):

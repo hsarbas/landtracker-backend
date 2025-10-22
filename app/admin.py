@@ -1,8 +1,9 @@
 # app/admin.py
-from pathlib import Path
 from sqladmin import Admin, ModelView
 from sqladmin.authentication import AuthenticationBackend
-from starlette.templating import Jinja2Templates
+from sqlalchemy import select
+import os
+
 from app.db.session import engine, SessionLocal
 from app.models.user import User
 from app.models.role import Role
@@ -15,16 +16,11 @@ from app.models.property_report import PropertyReport
 from app.models.refresh_token import RefreshToken
 from app.models.tie_point import TiePoint
 from app.core.security import verify_password
-from sqlalchemy import select
-import os
 
 ADMIN_ROLE_ID = int(os.getenv("ADMIN_ROLE_ID", "3"))
-TEMPLATES_DIR = Path(__file__).parent / "templates"
-
-# Custom templates for sqladmin
-templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 
+# --- Auth backend (no template changes needed) ---
 class AdminAuth(AuthenticationBackend):
     async def login(self, request):
         form = await request.form()
@@ -36,7 +32,7 @@ class AdminAuth(AuthenticationBackend):
                 select(User).where(
                     User.email == email,
                     User.is_active == True,
-                    User.role_id == ADMIN_ROLE_ID
+                    User.role_id == ADMIN_ROLE_ID,
                 )
             ).scalar_one_or_none()
 
@@ -57,13 +53,14 @@ class AdminAuth(AuthenticationBackend):
 
 
 def mount_admin(app):
+    # Use default SQLAdmin templates by NOT passing templates_dir
     auth_backend = AdminAuth(secret_key=os.getenv("ADMIN_SECRET", "super-secret-key"))
+
     admin = Admin(
-        app,
-        engine,
+        app=app,
+        engine=engine,
         authentication_backend=auth_backend,
-        templates_dir=str(TEMPLATES_DIR),
-        base_url="/admin",
+        base_url="/admin",  # keep as-is; behind Nginx /app proxy this becomes /app/admin
     )
 
     # --- Users ---
@@ -84,7 +81,7 @@ def mount_admin(app):
         icon = "fa-solid fa-users"
         column_list = [Role.id, Role.name, Role.description]
 
-    # --- EmailVerifyToken ---
+    # --- EmailVerifyToken (read-only) ---
     class EmailVerifyTokenAdmin(ModelView, model=EmailVerifyToken):
         name = "Email Verify Token"
         name_plural = "Email Verify Tokens"
@@ -100,13 +97,15 @@ def mount_admin(app):
             EmailVerifyToken.used_at,
         ]
         column_searchable_list = [EmailVerifyToken.token]
-        column_sortable_list = [EmailVerifyToken.id, EmailVerifyToken.created_at, EmailVerifyToken.expires_at,
-                                EmailVerifyToken.is_used]
-        # Show related user email in list if available
+        column_sortable_list = [
+            EmailVerifyToken.id,
+            EmailVerifyToken.created_at,
+            EmailVerifyToken.expires_at,
+            EmailVerifyToken.is_used,
+        ]
         column_formatters = {
             EmailVerifyToken.user_id: lambda m, a: f"{m.user_id} ({getattr(m.user, 'email', '')})"
         }
-        # tokens are security-sensitive → read-only in admin
         can_create = False
         can_edit = False
         can_delete = False
@@ -145,9 +144,7 @@ def mount_admin(app):
         ]
         column_searchable_list = [Property.title_number, Property.owner]
         column_sortable_list = [Property.id, Property.created_at, Property.updated_at]
-        # Big text field shouldn’t clutter list view; keep it in the form only
         form_excluded_columns = ["images", "boundaries", "reports", "user"]
-        # (Optional) make tech description editable but not required in list
         column_details_list = [
             Property.id,
             Property.title_number,
@@ -192,8 +189,12 @@ def mount_admin(app):
             PropertyImage.created_at,
         ]
         column_searchable_list = [PropertyImage.file_path]
-        column_sortable_list = [PropertyImage.id, PropertyImage.property_id, PropertyImage.order_index,
-                                PropertyImage.created_at]
+        column_sortable_list = [
+            PropertyImage.id,
+            PropertyImage.property_id,
+            PropertyImage.order_index,
+            PropertyImage.created_at,
+        ]
 
     # --- PropertyReport ---
     class PropertyReportAdmin(ModelView, model=PropertyReport):
@@ -230,8 +231,12 @@ def mount_admin(app):
             RefreshToken.reused_at,
         ]
         column_searchable_list = [RefreshToken.jti, RefreshToken.user_agent, RefreshToken.ip_addr]
-        column_sortable_list = [RefreshToken.id, RefreshToken.expires_at, RefreshToken.created_at,
-                                RefreshToken.is_revoked]
+        column_sortable_list = [
+            RefreshToken.id,
+            RefreshToken.expires_at,
+            RefreshToken.created_at,
+            RefreshToken.is_revoked,
+        ]
         column_formatters = {
             RefreshToken.user_id: lambda m, a: f"{m.user_id} ({getattr(m.user, 'email', '')})"
         }
@@ -259,17 +264,22 @@ def mount_admin(app):
             OtpCode.context_mobile,
         ]
         column_searchable_list = [OtpCode.purpose, OtpCode.context_mobile]
-        column_sortable_list = [OtpCode.id, OtpCode.expires_at, OtpCode.created_at, OtpCode.is_used,
-                                OtpCode.resend_count]
+        column_sortable_list = [
+            OtpCode.id,
+            OtpCode.expires_at,
+            OtpCode.created_at,
+            OtpCode.is_used,
+            OtpCode.resend_count,
+        ]
         column_formatters = {
             OtpCode.user_id: lambda m, a: f"{m.user_id} ({getattr(m.user, 'email', '')})"
         }
-        # Never expose code hashes in forms/lists
         form_excluded_columns = ["code_hash"]
         can_create = False
         can_edit = False
         can_delete = False
 
+    # Register all views
     admin.add_view(UserAdmin)
     admin.add_view(RoleAdmin)
     admin.add_view(PropertyAdmin)

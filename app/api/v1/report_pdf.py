@@ -18,7 +18,7 @@ from app.db.session import get_db
 from app.models.property_report import PropertyReport
 from app.models.property import Property  # to verify ownership
 
-router = APIRouter(prefix="/api/v1/report_pdf", tags=["reports"], dependencies=[Depends(get_current_user)])
+router = APIRouter(prefix="/v1/report_pdf", tags=["reports"], dependencies=[Depends(get_current_user)])
 
 # ---------- logo config ----------
 LOGO_MAX_H = 55  # points
