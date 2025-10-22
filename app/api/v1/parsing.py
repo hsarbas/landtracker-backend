@@ -3,7 +3,7 @@ from app.schemas.parsing import TextRequest, ParseResponse, BoundaryPoint
 from app.services.parsing import parse_land_title
 from app.core.deps import get_current_user
 
-router = APIRouter(prefix="/api/v1/parsing", tags=["Parsing"], dependencies=[Depends(get_current_user)])
+router = APIRouter(prefix="/v1/parsing", tags=["Parsing"], dependencies=[Depends(get_current_user)])
 
 
 @router.post("/text", response_model=ParseResponse)

@@ -6,7 +6,7 @@ from app.models.role import Role
 from app.schemas.role import RoleRead, RoleCreate
 from app.models.user import User
 
-router = APIRouter(prefix="/api/v1/roles", tags=["roles"])
+router = APIRouter(prefix="/v1/roles", tags=["roles"])
 
 
 def require_admin(user: User):

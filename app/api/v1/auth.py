@@ -37,7 +37,7 @@ from app.db.session import get_db
 from app.schemas.otp import MobileChangeRequest, MobileChangeConfirm
 
 
-router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
+router = APIRouter(prefix="/v1/auth", tags=["auth"])
 
 EMAIL_TOKEN_TTL_MINUTES = 60 * 24
 
@@ -67,7 +67,7 @@ def _create_email_verify_token(db: Session, user: User) -> EmailVerifyToken:
 
 
 def _send_verification_email(user, token: str):
-    verify_link = f"{APP_BACKEND_URL}/api/v1/auth/verify/email?token={token}"
+    verify_link = f"{APP_BACKEND_URL}/v1/auth/verify/email?token={token}"
     html = build_verification_email(user.email, verify_link)
     send_email(
         to=user.email,
@@ -442,7 +442,7 @@ def login(payload: UserLogin, response: Response, request: Request, db: Session 
             detail={
                 "code": "EMAIL_VERIFICATION_REQUIRED",
                 "message": "Email not verified. We sent you a verification link.",
-                "next": {"endpoint": "/api/v1/auth/verify/email?token=<token-from-email>", "method": "GET"},
+                "next": {"endpoint": "/v1/auth/verify/email?token=<token-from-email>", "method": "GET"},
             },
         )
 
