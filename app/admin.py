@@ -63,6 +63,7 @@ def mount_admin(app):
         engine,
         authentication_backend=auth_backend,
         templates_dir=str(TEMPLATES_DIR),
+        base_url="/app/admin",
     )
 
     # --- Users ---
