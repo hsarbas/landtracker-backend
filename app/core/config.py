@@ -66,7 +66,7 @@ class Settings(BaseSettings):
     smtp_from_email: str = Field("no-reply@landtracker.ph", alias="SMTP_FROM_EMAIL")
 
     app_frontend_url: str = Field("https://landtracker.ph", alias="APP_FRONTEND_URL")
-    app_backend_url: str = Field("https://landtracker.ph/app", alias="APP_BACKEND_URL")
+    app_backend_url: str = Field("https://landtracker.ph/api", alias="APP_BACKEND_URL")
 
     # --- CORS ---
     # Comma-separated in .env or leave default list
