@@ -24,4 +24,4 @@ COPY . .
 EXPOSE 8000
 
 # Env file is mounted by compose
-CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2 --proxy-headers --root-path /api"]
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2 --proxy-headers --forwarded-allow-ips='*' --root-path /api"]
