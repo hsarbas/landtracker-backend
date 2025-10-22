@@ -5,7 +5,7 @@ from urllib.parse import urlsplit, unquote, parse_qsl, urlencode, urlunsplit
 from app.core.deps import get_current_user
 import httpx
 
-router = APIRouter(prefix="/api/v1/staticmap", tags=["staticmap"], dependencies=[Depends(get_current_user)])
+router = APIRouter(prefix="/v1/staticmap", tags=["staticmap"], dependencies=[Depends(get_current_user)])
 ALLOWED_HOST = "maps.googleapis.com"
 ALLOWED_PATH_PREFIX = "/maps/api/staticmap"
 

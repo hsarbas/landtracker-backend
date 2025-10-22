@@ -3,7 +3,7 @@ from pyproj import Transformer
 from app.schemas.geometry import NERequest, LonLatResponse
 from app.core.deps import get_current_user
 
-router = APIRouter(prefix="/api/v1/convert", tags=["Convert"], dependencies=[Depends(get_current_user)])
+router = APIRouter(prefix="/v1/convert", tags=["Convert"], dependencies=[Depends(get_current_user)])
 
 
 @router.post("/prs92-zone3", response_model=LonLatResponse)

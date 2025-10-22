@@ -24,7 +24,7 @@ from app.schemas.property import (
 )
 
 router = APIRouter(
-    prefix="/api/v1/properties",
+    prefix="/v1/properties",
     tags=["properties"],
     dependencies=[Depends(get_current_user)],
 )

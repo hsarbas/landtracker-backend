@@ -4,7 +4,7 @@ from app.schemas.geometry import Payload
 from app.services.geodesy import next_point
 from app.core.deps import get_current_user
 
-router = APIRouter(prefix="/api/v1/geometry", tags=["Geometry"], dependencies=[Depends(get_current_user)])
+router = APIRouter(prefix="/v1/geometry", tags=["Geometry"], dependencies=[Depends(get_current_user)])
 
 
 @router.post("/boundaries", response_model=List[List[float]])

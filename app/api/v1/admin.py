@@ -8,7 +8,7 @@ from app.models.role import Role
 from app.core.deps import get_db, require_roles, get_current_user
 
 router = APIRouter(
-    prefix="/api/v1/admin",
+    prefix="/v1/admin",
     tags=["admin"],
     dependencies=[Depends(get_current_user)],  # keeps all endpoints auth-protected
 )

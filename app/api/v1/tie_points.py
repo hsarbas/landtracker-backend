@@ -10,7 +10,7 @@ from app.schemas.tie_point import TiePointCreate, TiePointRead, TiePointImport
 from app.utils.strings import norm_str, norm_upper
 from app.core.deps import get_current_user
 
-router = APIRouter(prefix="/api/v1/tie-points", tags=["TiePoints"], dependencies=[Depends(get_current_user)])
+router = APIRouter(prefix="/v1/tie-points", tags=["TiePoints"], dependencies=[Depends(get_current_user)])
 
 
 @router.post("", response_model=TiePointRead)
