@@ -1,0 +1,39 @@
+version: "3.9"
+services:
+  db:
+    image: postgres:16
+    container_name: landtracker-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-landtracker_db}
+      POSTGRES_USER: ${POSTGRES_USER:-landtracker}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-landtrackerpw1234}
+    # Do NOT publish in production; only internal network
+    # ports: ["127.0.0.1:5433:5432"]  # (use only for local dev)
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: landtracker-api
+    restart: unless-stopped
+    env_file:
+      - .env
+    # Bind only to localhost so only Nginx can reach it
+    ports:
+      - "127.0.0.1:8001:8000"
+    depends_on:
+      - db
+    volumes:
+      # read-only mount of keys dir if needed
+      - /opt/landtracker/backend/keys:/opt/landtracker/backend/keys:ro
+
+volumes:
+  pgdata:
