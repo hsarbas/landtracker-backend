@@ -288,4 +288,4 @@ def mount_admin(app):
     admin.add_view(EmailVerifyTokenAdmin)
     admin.add_view(RefreshTokenAdmin)
     admin.add_view(TiePointAdmin)
-    admin.add_view(OtpCodeAdmin)
+    # admin.add_view(OtpCodeAdmin)
