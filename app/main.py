@@ -25,6 +25,7 @@ from app.api.v1.report_pdf import router as report_pdf_router
 from app.api.v1.properties import router as properties_router
 
 from starlette.middleware.sessions import SessionMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from app.admin import mount_admin
 import os
 
@@ -36,9 +37,20 @@ app = FastAPI(
     openapi_url="/openapi.json"
 )
 
+
+class ForceRootPathMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        # Force Starlette/FastAPI to use /app as the base for URL generation
+        if request.url.path.startswith("/app/"):
+            request.scope["root_path"] = "/app"
+        response = await call_next(request)
+        return response
+
+
 configure_cors(app)
 app.add_middleware(CapacitorOriginFix)
 app.add_middleware(SessionMiddleware, secret_key=os.getenv("ADMIN_SECRET", "super-secret-key"))
+app.add_middleware(ForceRootPathMiddleware)
 
 mount_admin(app)
 
