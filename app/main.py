@@ -31,6 +31,7 @@ import os
 app = FastAPI(
     title=settings.app_name,
     version="0.1.0",
+    root_path="/app",
     docs_url="/docs",
     openapi_url="/openapi.json"
 )
