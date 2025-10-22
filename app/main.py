@@ -24,6 +24,10 @@ from app.api.v1.users import router as users_router
 from app.api.v1.report_pdf import router as report_pdf_router
 from app.api.v1.properties import router as properties_router
 
+from starlette.middleware.sessions import SessionMiddleware
+from app.admin import mount_admin
+import os
+
 app = FastAPI(
     title=settings.app_name,
     version="0.1.0",
@@ -34,6 +38,9 @@ app = FastAPI(
 
 configure_cors(app)
 app.add_middleware(CapacitorOriginFix)
+app.add_middleware(SessionMiddleware, secret_key=os.getenv("ADMIN_SECRET", "super-secret-key"))
+
+mount_admin(app)
 
 # Global exception handlers
 app.add_exception_handler(RequestValidationError, validation_exception_handler)
