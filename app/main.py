@@ -25,7 +25,6 @@ from app.api.v1.report_pdf import router as report_pdf_router
 from app.api.v1.properties import router as properties_router
 
 from starlette.middleware.sessions import SessionMiddleware
-from starlette.middleware.proxy_headers import ProxyHeadersMiddleware
 from app.admin import mount_admin
 import os
 
@@ -41,7 +40,6 @@ app = FastAPI(
 configure_cors(app)
 app.add_middleware(CapacitorOriginFix)
 app.add_middleware(SessionMiddleware, secret_key=os.getenv("ADMIN_SECRET", "super-secret-key"))
-app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 
 mount_admin(app)
 
