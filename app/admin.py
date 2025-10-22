@@ -60,7 +60,6 @@ def mount_admin(app):
         app=app,
         engine=engine,
         authentication_backend=auth_backend,
-        base_url="/admin",  # keep as-is; behind Nginx /app proxy this becomes /app/admin
     )
 
     # --- Users ---
