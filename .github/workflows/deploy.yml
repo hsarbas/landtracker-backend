@@ -1,0 +1,25 @@
+name: Deploy Backend (production)
+
+on:
+  push:
+    branches: [ production ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: SSH and deploy
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            set -e
+            cd ${{ secrets.BACKEND_DIR }}
+            git fetch --all
+            git checkout production
+            git pull origin production
+            docker compose -f docker-compose.prod.yml up -d --build
+            docker system prune -f
