@@ -128,6 +128,7 @@ DEFAULT_START_VARIATIONS = [
 
 DEFAULT_END_VARIATIONS = [
     r"to\s+point\s+of\s+beginning",
+    r"to\s+pt.\s+of\s+beginning",
     r"to\s+the\s+point\s+of\s+beginning",
     r"returning\s+to\s+the\s+point\s+of\s+beginning",
     r"back\s+to\s+point\s+of\s+beginning",
